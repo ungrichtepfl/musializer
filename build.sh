@@ -2,7 +2,7 @@
 
 set -xe
 
-CFLAGS="-Wall -Wextra -Wpedantic $(pkg-config --cflags raylib)"
+CFLAGS="-Wall -Wextra -Wpedantic -g $(pkg-config --cflags raylib)"
 LFLAGS=$(pkg-config  --libs raylib)
 
 # shellcheck disable=SC2086
