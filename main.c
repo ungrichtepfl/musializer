@@ -14,82 +14,59 @@
 
 #define ARRAY_LENGTH(x) (sizeof(x) / sizeof(x[0]))
 
-static unsigned int SAMPLE_SIZE = 0;
 static unsigned int CHANNELS = 0;
 
-#define SAMPLE_BUFFER_MAX_SIZE (1024 * 10)
-static int32_t SAMPLE_BUFFER[SAMPLE_BUFFER_MAX_SIZE] = {0};
-static unsigned int SAMPLE_BUFFER_COUNT = 0;
-#define SAMPLE_BUFFER_COUNT_BYTES (SAMPLE_BUFFER_COUNT * 4)
-#define SAMPLE_BUFFER_CAPACITY                                                 \
-  (((long)SAMPLE_BUFFER_MAX_SIZE - (long)SAMPLE_BUFFER_COUNT < 0)              \
+typedef struct Frames {
+  // TODO: Check which is left and which is right
+  float left;
+  float right;
+} Frames;
+
+#define FRAME_BUFFER_CAPACITY (1024 * 10)
+static Frames FRAME_BUFFER[FRAME_BUFFER_CAPACITY] = {0};
+static unsigned int FRAME_BUFFER_SIZE = 0;
+#define FRAME_BUFFER_SIZE_BYTES (FRAME_BUFFER_SIZE * sizeof(Frames))
+#define FRAME_BUFFER_UNINITIALIZED_ELEMS                                       \
+  (((long)FRAME_BUFFER_CAPACITY - (long)FRAME_BUFFER_SIZE < 0)                 \
        ? 0                                                                     \
-       : (SAMPLE_BUFFER_MAX_SIZE - SAMPLE_BUFFER_COUNT))
-#define SAMPLE_BUFFER_CAPACITY_BYTES (SAMPLE_BUFFER_CAPACITY * 4)
+       : (FRAME_BUFFER_CAPACITY - FRAME_BUFFER_SIZE))
+#define FRAME_BUFFER_UNINITIALIZED_BYTES                                       \
+  (FRAME_BUFFER_UNINITIALIZED_ELEMS * sizeof(Frames))
 #define FRAMES_TO_SAMPLES(frames) (frames * CHANNELS)
 #define SAMPLES_TO_FRAMES(frames) (frames / CHANNELS)
 static pthread_mutex_t BUFFER_LOCK;
 
+// NOTE: From raudio.c:1269 (LoadMusicStream) of raylib:
+//  We are loading samples are 32bit float normalized data, so,
+//  we configure the output audio stream to also use float 32bit
 void fillSampleBuffer(void *buffer, unsigned int frames) {
+  assert(CHANNELS == 2 && "Does only support music with 2 channels.");
   pthread_mutex_lock(&BUFFER_LOCK);
-  unsigned int samples = FRAMES_TO_SAMPLES(frames);
-  unsigned int bytes_available = (SAMPLE_SIZE / 8) * samples;
-  unsigned int to_fill = (SAMPLE_BUFFER_CAPACITY_BYTES < bytes_available)
-                             ? SAMPLE_BUFFER_CAPACITY_BYTES
-                             : bytes_available;
-  if (to_fill > 0) {
-    memcpy(SAMPLE_BUFFER, buffer, to_fill);
-    SAMPLE_BUFFER_COUNT = to_fill / (SAMPLE_SIZE / 8);
-  }
-  // printf("bytes_available %u\n", bytes_available);
-  // printf("samples=%u\n", samples);
-  // printf("to fill %u\n", to_fill);
-  // printf("Buffer capacity bytes %u\n", SAMPLE_BUFFER_CAPACITY_BYTES);
-  // printf("Buffer count bytes %u\n", SAMPLE_BUFFER_COUNT_BYTES);
-  // printf("Buffer count  %u\n", SAMPLE_BUFFER_COUNT);
-  // if (SAMPLE_BUFFER_COUNT >= SAMPLE_BUFFER_MAX_SIZE)
-  //   exit(1);
+  unsigned int frames_to_fill =
+      (frames > FRAME_BUFFER_CAPACITY) ? FRAME_BUFFER_CAPACITY : frames;
+  memcpy(FRAME_BUFFER, buffer,
+         frames_to_fill *
+             sizeof(Frames)); // HACK: This only works for two channel audio
+                              //  because Frames contains 2 floats.
+  FRAME_BUFFER_SIZE = frames_to_fill;
   pthread_mutex_unlock(&BUFFER_LOCK);
 }
 
 void drawWave(void) {
-  long step = 0;
-  switch (SAMPLE_SIZE) {
-  case 16:
-    step = 1;
-    break;
-  case 32:
-    step = 2;
-    break;
-  default:
-    assert(false && "Sample size is not supported.");
-  }
 
-  printf("--------------- START SAMPLES -----------------\n");
-  printf("Sample buffer count %u\n", SAMPLE_BUFFER_COUNT);
+  printf("--------------- START FRAMES -----------------\n");
+  printf("Sample buffer count %u\n", FRAME_BUFFER_SIZE);
   pthread_mutex_lock(&BUFFER_LOCK);
-  for (long i = 0; i < (long)SAMPLE_BUFFER_COUNT - (step - 1); i += step) {
-    int32_t sample_1;
-    int32_t sample_2;
-    switch (SAMPLE_SIZE) {
-    case 16:
-      sample_1 = (SAMPLE_BUFFER[i] >> 16);
-      sample_2 = SAMPLE_BUFFER[i] & (int32_t)65535;
-      break;
-    case 32:
-      sample_1 = SAMPLE_BUFFER[i];
-      sample_2 = SAMPLE_BUFFER[i + 1];
-      break;
-    default:
-      assert(false && "Sample size is not supported.");
-    }
-    printf("(1 [%d], ", sample_1);
-    printf("2 [%d]) ", sample_2);
+  for (unsigned int i = 0; i < FRAME_BUFFER_SIZE; ++i) {
+    float sleft = FRAME_BUFFER[i].left;
+    float sright = FRAME_BUFFER[i].right;
+    printf("(L [%f], ", sleft);
+    printf("R [%f]) ", sright);
   }
   printf("\n");
-  SAMPLE_BUFFER_COUNT = 0;
+  FRAME_BUFFER_SIZE = 0;
   pthread_mutex_unlock(&BUFFER_LOCK);
-  printf("--------------- END SAMPLES -----------------\n");
+  printf("--------------- END FRAMES -----------------\n");
 }
 
 char *getFirstFile(FilePathList files) {
@@ -106,9 +83,8 @@ Music playMusicFromFile(void) {
   AttachAudioStreamProcessor(music.stream, &fillSampleBuffer);
   printf("Frame count: %u\n", music.frameCount);
   printf("Sample rate: %u\n", music.stream.sampleRate);
+  printf("Frame size: %u\n", music.frameCount);
   CHANNELS = music.stream.channels;
-  assert(CHANNELS == 2 && "Does only support music with 2 channels.");
-  SAMPLE_SIZE = music.stream.sampleSize;
   return music;
 }
 
