@@ -54,19 +54,20 @@ void fillSampleBuffer(void *buffer, unsigned int frames) {
 
 void drawWave(void) {
 
-  printf("--------------- START FRAMES -----------------\n");
-  printf("Sample buffer count %u\n", FRAME_BUFFER_SIZE);
   pthread_mutex_lock(&BUFFER_LOCK);
   for (unsigned int i = 0; i < FRAME_BUFFER_SIZE; ++i) {
     float sleft = FRAME_BUFFER[i].left;
     float sright = FRAME_BUFFER[i].right;
-    printf("(L [%f], ", sleft);
-    printf("R [%f]) ", sright);
+    if (sleft > 0)
+      DrawRectangle(i, GetScreenHeight() / 2, 1, sleft * GetScreenHeight() / 2,
+                    RED);
+    else
+      DrawRectangle(
+          i, (float)GetScreenHeight() / 2 + sleft * GetScreenHeight() / 2, 1,
+          -sleft * GetScreenHeight() / 2, RED);
   }
-  printf("\n");
   FRAME_BUFFER_SIZE = 0;
   pthread_mutex_unlock(&BUFFER_LOCK);
-  printf("--------------- END FRAMES -----------------\n");
 }
 
 char *getFirstFile(FilePathList files) {
