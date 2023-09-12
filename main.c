@@ -1,3 +1,4 @@
+#include <errno.h>
 #include <stdio.h>
 
 #include <assert.h>
@@ -41,7 +42,17 @@ static pthread_mutex_t BUFFER_LOCK;
 //  we configure the output audio stream to also use float 32bit
 void fillSampleBuffer(void *buffer, unsigned int frames) {
   assert(CHANNELS == 2 && "Does only support music with 2 channels.");
-  pthread_mutex_lock(&BUFFER_LOCK);
+  int err;
+  // lock mutex
+  if ((err = pthread_mutex_trylock(&BUFFER_LOCK)) != 0) {
+    if (err != EBUSY) {
+      printf("WARNING could not lock mutex. Error code %d. Returning from "
+             "function.",
+             err);
+    }
+    // Do not waste time. Just try next time.
+    return;
+  }
   unsigned int frames_to_fill =
       (frames > FRAME_BUFFER_CAPACITY) ? FRAME_BUFFER_CAPACITY : frames;
   memcpy(FRAME_BUFFER, buffer,
@@ -49,15 +60,31 @@ void fillSampleBuffer(void *buffer, unsigned int frames) {
              sizeof(Frames)); // HACK: This only works for two channel audio
                               //  because Frames contains 2 floats.
   FRAME_BUFFER_SIZE = frames_to_fill;
-  pthread_mutex_unlock(&BUFFER_LOCK);
+
+  // Unlock mutex
+  if ((err = pthread_mutex_unlock(&BUFFER_LOCK)) != 0) {
+    printf("ERROR: Could not unlock mutex. Error code: %d. Quitting program.",
+           err);
+    exit(err);
+  }
 }
 
 void drawWave(void) {
+  if (FRAME_BUFFER_SIZE == 0)
+    return; // Nothing to draw
 
-  pthread_mutex_lock(&BUFFER_LOCK);
+  int err;
+  // Locking mutex
+  if ((err = pthread_mutex_lock(&BUFFER_LOCK)) != 0) {
+    printf("WARNING could not lock mutex. Error code %d. Returning from "
+           "function.",
+           err);
+    return;
+  };
   for (unsigned int i = 0; i < FRAME_BUFFER_SIZE; ++i) {
     float sleft = FRAME_BUFFER[i].left;
     float sright = FRAME_BUFFER[i].right;
+    (void)sright;
     if (sleft > 0)
       DrawRectangle(i, GetScreenHeight() / 2, 1, sleft * GetScreenHeight() / 2,
                     RED);
@@ -67,7 +94,12 @@ void drawWave(void) {
           -sleft * GetScreenHeight() / 2, RED);
   }
   FRAME_BUFFER_SIZE = 0;
-  pthread_mutex_unlock(&BUFFER_LOCK);
+  // Unlock mutex
+  if ((err = pthread_mutex_unlock(&BUFFER_LOCK)) != 0) {
+    printf("ERROR: Could not unlock mutex. Error code: %d. Quitting program.",
+           err);
+    exit(err);
+  }
 }
 
 char *getFirstFile(FilePathList files) {
