@@ -44,6 +44,26 @@ void fillSampleBuffer(void *buffer, unsigned int frames) {
   if (frames == 0)
     return; // Nothing to do! TODO: Check if this even can happen.
   assert(CHANNELS == 2 && "Does only support music with 2 channels.");
+
+  unsigned int frames_to_copy = 0;
+  unsigned int offset = 0;
+  const unsigned int available_frames_to_fill =
+      FRAME_BUFFER_CAPACITY - FRAME_BUFFER_SIZE;
+
+  if (frames >= FRAME_BUFFER_CAPACITY) {
+    // Just fill all up with new values.
+    offset = 0;
+    frames_to_copy = FRAME_BUFFER_CAPACITY;
+  } else if (frames > available_frames_to_fill) {
+    // Just start again with the newest frames
+    offset = 0;
+    frames_to_copy = frames;
+  } else {
+    // Append the frames to the buffer
+    offset = FRAME_BUFFER_SIZE;
+    frames_to_copy = frames;
+  }
+
   int err;
   // lock mutex
   if ((err = pthread_mutex_trylock(&BUFFER_LOCK)) != 0) {
@@ -55,37 +75,11 @@ void fillSampleBuffer(void *buffer, unsigned int frames) {
     // Do not waste time. Just try next time.
     return;
   }
-
-  if (frames >= FRAME_BUFFER_CAPACITY) {
-    // Just fill all up with new values.
-    printf("Full\n");
-    memcpy(FRAME_BUFFER, buffer,
-           FRAME_BUFFER_CAPACITY *
-               sizeof(Frames)); // HACK: This only works for two channel audio
-                                //  because Frames contains 2 floats.
-    FRAME_BUFFER_SIZE = FRAME_BUFFER_CAPACITY;
-  } else {
-    const unsigned int available_frames_to_fill =
-        FRAME_BUFFER_CAPACITY - FRAME_BUFFER_SIZE;
-    if (frames > available_frames_to_fill) {
-
-      printf("Refill\n");
-      // Just fill up with the newest frames
-      memcpy(FRAME_BUFFER, buffer,
-             frames *
-                 sizeof(Frames)); // HACK: This only works for two channel audio
-                                  //  because Frames contains 2 floats.
-      FRAME_BUFFER_SIZE = frames;
-
-    } else {
-      printf("Add\n");
-      memcpy(FRAME_BUFFER + FRAME_BUFFER_SIZE, buffer,
-             frames *
-                 sizeof(Frames)); // HACK: This only works for two channel audio
-                                  //  because Frames contains 2 floats.
-      FRAME_BUFFER_SIZE += frames;
-    }
-  }
+  memcpy(FRAME_BUFFER + offset, buffer,
+         frames_to_copy *
+             sizeof(Frames)); // HACK: This only works for two channel audio
+                              //  because Frames contains 2 floats.
+  FRAME_BUFFER_SIZE = offset + frames_to_copy;
 
   // Unlock mutex
   if ((err = pthread_mutex_unlock(&BUFFER_LOCK)) != 0) {
