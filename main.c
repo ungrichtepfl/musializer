@@ -15,7 +15,7 @@
 
 #define ARRAY_LENGTH(x) (sizeof(x) / sizeof(x[0]))
 
-static unsigned int CHANNELS = 0;
+static unsigned int CHANNELS = 2;
 
 typedef struct Frames {
   // TODO: Check which is left and which is right
@@ -23,7 +23,7 @@ typedef struct Frames {
   float right;
 } Frames;
 
-#define FRAME_BUFFER_CAPACITY (1024 * 10)
+#define FRAME_BUFFER_CAPACITY (1024)
 static Frames FRAME_BUFFER[FRAME_BUFFER_CAPACITY] = {0};
 static unsigned int FRAME_BUFFER_SIZE = 0;
 #define FRAME_BUFFER_SIZE_BYTES (FRAME_BUFFER_SIZE * sizeof(Frames))
@@ -41,6 +41,8 @@ static pthread_mutex_t BUFFER_LOCK;
 //  We are loading samples are 32bit float normalized data, so,
 //  we configure the output audio stream to also use float 32bit
 void fillSampleBuffer(void *buffer, unsigned int frames) {
+  if (frames == 0)
+    return; // Nothing to do! TODO: Check if this even can happen.
   assert(CHANNELS == 2 && "Does only support music with 2 channels.");
   int err;
   // lock mutex
@@ -53,13 +55,37 @@ void fillSampleBuffer(void *buffer, unsigned int frames) {
     // Do not waste time. Just try next time.
     return;
   }
-  unsigned int frames_to_fill =
-      (frames > FRAME_BUFFER_CAPACITY) ? FRAME_BUFFER_CAPACITY : frames;
-  memcpy(FRAME_BUFFER, buffer,
-         frames_to_fill *
-             sizeof(Frames)); // HACK: This only works for two channel audio
-                              //  because Frames contains 2 floats.
-  FRAME_BUFFER_SIZE = frames_to_fill;
+
+  if (frames >= FRAME_BUFFER_CAPACITY) {
+    // Just fill all up with new values.
+    printf("Full\n");
+    memcpy(FRAME_BUFFER, buffer,
+           FRAME_BUFFER_CAPACITY *
+               sizeof(Frames)); // HACK: This only works for two channel audio
+                                //  because Frames contains 2 floats.
+    FRAME_BUFFER_SIZE = FRAME_BUFFER_CAPACITY;
+  } else {
+    const unsigned int available_frames_to_fill =
+        FRAME_BUFFER_CAPACITY - FRAME_BUFFER_SIZE;
+    if (frames > available_frames_to_fill) {
+
+      printf("Refill\n");
+      // Just fill up with the newest frames
+      memcpy(FRAME_BUFFER, buffer,
+             frames *
+                 sizeof(Frames)); // HACK: This only works for two channel audio
+                                  //  because Frames contains 2 floats.
+      FRAME_BUFFER_SIZE = frames;
+
+    } else {
+      printf("Add\n");
+      memcpy(FRAME_BUFFER + FRAME_BUFFER_SIZE, buffer,
+             frames *
+                 sizeof(Frames)); // HACK: This only works for two channel audio
+                                  //  because Frames contains 2 floats.
+      FRAME_BUFFER_SIZE += frames;
+    }
+  }
 
   // Unlock mutex
   if ((err = pthread_mutex_unlock(&BUFFER_LOCK)) != 0) {
@@ -70,8 +96,9 @@ void fillSampleBuffer(void *buffer, unsigned int frames) {
 }
 
 void drawWave(void) {
-  if (FRAME_BUFFER_SIZE == 0)
+  if (FRAME_BUFFER_SIZE == 0) {
     return; // Nothing to draw
+  }
 
   int err;
   // Locking mutex
@@ -113,7 +140,6 @@ Music playMusicFromFile(void) {
   Music music = LoadMusicStream(file_path);
   PlayMusicStream(music);
   UnloadDroppedFiles(files);
-  AttachAudioStreamProcessor(music.stream, &fillSampleBuffer);
   printf("Frame count: %u\n", music.frameCount);
   printf("Sample rate: %u\n", music.stream.sampleRate);
   printf("Frame size: %u\n", music.frameCount);
@@ -132,7 +158,6 @@ int main(void) {
 
   // Music that will be played
   Music music;
-  // AttachAudioMixedProcessor(&fillSampleBuffer);
 
   float timePlayed = 0.0f; // Time played normalized [0.0f..1.0f]
 
@@ -146,7 +171,16 @@ int main(void) {
     // Update
     //----------------------------------------------------------------------------------
     if (IsFileDropped()) {
+      if (IsMusicReady(music))
+        // Detach if already loaded
+        DetachAudioStreamProcessor(music.stream, &fillSampleBuffer);
+
       music = playMusicFromFile();
+
+      // Reset buffer
+      FRAME_BUFFER_SIZE = 0;
+      // Attach to new music stream
+      AttachAudioStreamProcessor(music.stream, &fillSampleBuffer);
     }
 
     if (IsMusicReady(music)) {
