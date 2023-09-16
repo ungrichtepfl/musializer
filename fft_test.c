@@ -1,8 +1,9 @@
 #include "fft.h"
 #include <stdio.h>
+#include <time.h>
 
-#define P 3
-#define N (1 << P)
+#define P ((size_t)1 << 14)
+#define N 8
 
 static inline void print_cvec(float complex sig[], size_t n) {
 
@@ -17,9 +18,12 @@ static inline void print_fvec(float sig[], size_t n) {
 }
 
 int main(void) {
+  clock_t start, diff;
+  int msec;
+
   float sig[N] = {0};
 
-  for (int i = 0; i < N; ++i) {
+  for (size_t i = 0; i < N; ++i) {
     float t = (float)i / N; // such that f_k = k / N * f_s = k / N * N = k
     float f1 = 2.0;
     float f2 = 3.0;
@@ -27,12 +31,12 @@ int main(void) {
 
     sig[i] = dc + sinf(2 * M_PI * f1 * t) + cosf(2 * M_PI * f2 * t);
   }
+  float complex freq[N];
 
   printf("======= DFT =======\n");
   printf("------ Signal Before ------\n");
   print_fvec(sig, N);
 
-  float complex freq[N];
   dft(sig, freq, N);
 
   printf("------ Signal After ------\n");
@@ -51,4 +55,32 @@ int main(void) {
   printf("------ Signal After ------\n");
   fft(sig, freq, N);
   print_cvec(freq, N);
+
+  printf("\n====== PERFORMANCE ======\n");
+
+  float sig_perf[P] = {0};
+
+  for (size_t i = 0; i < P; ++i) {
+    float t = (float)i / P; // such that f_k = k / P * f_s = k / P * P = k
+    float f1 = 2.0;
+    float f2 = 3.0;
+    float dc = 3.0;
+
+    sig_perf[i] = dc + sinf(2 * M_PI * f1 * t) + cosf(2 * M_PI * f2 * t);
+  }
+  float complex freq_perf[P];
+  printf("N=%ld\n", P);
+  printf("======= DFT =======\n");
+  start = clock();
+  dft(sig_perf, freq_perf, P);
+  diff = clock() - start;
+  msec = diff * 1000 / CLOCKS_PER_SEC;
+  printf("Time taken %d seconds %d milliseconds\n", msec / 1000, msec % 1000);
+
+  printf("======= FFT =======\n");
+  start = clock();
+  fft(sig_perf, freq_perf, P);
+  diff = clock() - start;
+  msec = diff * 1000 / CLOCKS_PER_SEC;
+  printf("Time taken %d seconds %d milliseconds\n", msec / 1000, msec % 1000);
 }
