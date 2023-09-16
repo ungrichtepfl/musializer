@@ -1,7 +1,8 @@
 #include "fft.h"
 #include <stdio.h>
 
-#define N 12
+#define P 3
+#define N (1 << P)
 
 static inline void print_cvec(float complex sig[], size_t n) {
 
@@ -21,23 +22,33 @@ int main(void) {
   for (int i = 0; i < N; ++i) {
     float t = (float)i / N; // such that f_k = k / N * f_s = k / N * N = k
     float f1 = 2.0;
-    float f2 = 5.0;
+    float f2 = 3.0;
     float dc = 3.0;
 
     sig[i] = dc + sinf(2 * M_PI * f1 * t) + cosf(2 * M_PI * f2 * t);
   }
 
+  printf("======= DFT =======\n");
   printf("------ Signal Before ------\n");
   print_fvec(sig, N);
 
   float complex freq[N];
   dft(sig, freq, N);
 
-  printf("------- DFT -------\n");
+  printf("------ Signal After ------\n");
   print_cvec(freq, N);
 
-  idft(freq, sig, N);
+  float sig_rev[N] = {0};
+  idft(freq, sig_rev, N);
 
-  printf("------ Signal After \n");
+  printf("------ Signal Reversed \n");
+  print_fvec(sig_rev, N);
+
+  printf("========= FFT ==========\n");
+
+  printf("------ Signal Before ------\n");
   print_fvec(sig, N);
+  printf("------ Signal After ------\n");
+  fft(sig, freq, N);
+  print_cvec(freq, N);
 }
