@@ -1,5 +1,5 @@
-#ifndef FFH_H
-#define FFH_H
+#ifndef FFT_H
+#define FFT_H
 
 #include <complex.h>
 #include <math.h>
@@ -13,4 +13,4 @@ void fft(float in[], float complex out[], const size_t n);
 
 void ifft(float complex in[], float out[], const size_t n);
 
-#endif // FFH_H
+#endif // FFT_H

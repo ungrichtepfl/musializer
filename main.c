@@ -1,8 +1,10 @@
+#include <dlfcn.h>
 #include <errno.h>
 #include <stddef.h>
 #include <stdio.h>
 
 #include "fft.h"
+#include "plug.h"
 #include <assert.h>
 #include <pthread.h>
 #include <raylib.h>
@@ -211,6 +213,25 @@ Music playMusicFromFile(void) {
 }
 
 int main(void) {
+
+  const char *libplug_file_name = "build/libplug.so";
+
+  void *libplug = dlopen(libplug_file_name, RTLD_LAZY);
+
+  if (libplug == NULL) {
+    fprintf(stderr, "Could not load %s: %s\n", libplug_file_name, dlerror());
+    return 1;
+  }
+  PLUG plugins = dlsym(libplug, PLUG_SYM);
+  if (libplug == NULL) {
+    fprintf(stderr, "Could not load %s from %s: %s\n", PLUG_SYM,
+            libplug_file_name, dlerror());
+    return 1;
+  }
+  plugins->plug_hello();
+
+  dlclose(libplug);
+
   if (pthread_mutex_init(&BUFFER_LOCK, NULL) != 0) {
     printf("\n mutex init failed\n");
     return 1;
