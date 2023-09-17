@@ -51,7 +51,6 @@ int main(void) {
             libplug_file_name, dlerror());
     return 1;
   }
-  plugins->plug_hello();
 
   if (pthread_mutex_init(plugins->BUFFER_LOCK, NULL) != 0) {
     printf("\n mutex init failed\n");
@@ -75,6 +74,18 @@ int main(void) {
 
     // Update
     //----------------------------------------------------------------------------------
+
+    if (IsKeyPressed(KEY_R)) {
+      // Reload plugins
+      dlclose(libplug);
+      void *libplug = dlopen(libplug_file_name, RTLD_LAZY);
+
+      if (libplug == NULL) {
+        fprintf(stderr, "Could not load %s: %s\n", libplug_file_name,
+                dlerror());
+        return 1;
+      }
+    }
     if (IsFileDropped()) {
       if (IsMusicReady(music))
         // Detach if already loaded

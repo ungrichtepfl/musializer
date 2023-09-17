@@ -87,7 +87,7 @@ void drawFrequency(void) {
   for (int i = 0; i < GetScreenWidth(); ++i) {
     const float f = cabsf(frequencies[i]);
     const int h = (float)GetScreenHeight() / f_max * f;
-    DrawRectangle(i, GetScreenHeight() - h, 1, h, RED);
+    DrawRectangle(i, GetScreenHeight() - h, 1, h, GREEN);
   }
 }
 
