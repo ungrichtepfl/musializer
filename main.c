@@ -1,6 +1,8 @@
 #include <errno.h>
+#include <stddef.h>
 #include <stdio.h>
 
+#include "fft.h"
 #include <assert.h>
 #include <pthread.h>
 #include <raylib.h>
@@ -11,7 +13,7 @@
 #define SCREEN_WIDTH 800
 #define SCREEN_HEIGHT 450
 
-#define FPS 60
+#define FPS 24
 
 #define ARRAY_LENGTH(x) (sizeof(x) / sizeof(x[0]))
 
@@ -23,7 +25,7 @@ typedef struct Frames {
   float right;
 } Frames;
 
-#define FRAME_BUFFER_CAPACITY (1024)
+#define FRAME_BUFFER_CAPACITY (2 * SCREEN_WIDTH)
 static Frames FRAME_BUFFER[FRAME_BUFFER_CAPACITY] = {0};
 static unsigned int FRAME_BUFFER_SIZE = 0;
 #define FRAME_BUFFER_SIZE_BYTES (FRAME_BUFFER_SIZE * sizeof(Frames))
@@ -89,10 +91,29 @@ void fillSampleBuffer(void *buffer, unsigned int frames) {
   }
 }
 
-void drawWave(void) {
-  if (FRAME_BUFFER_SIZE == 0) {
-    return; // Nothing to draw
+#define FFT_SIZE 2048
+
+#define max(a, b) (a > b ? a : b)
+
+static inline float fmaxvf(const float x[], const size_t n) {
+  assert(n > 0 && "Empty vector");
+  float m = x[0];
+  for (size_t i = 0; i < n; ++i) {
+    m = max(m, x[i]);
   }
+  return m;
+}
+
+static inline float cmaxvf(const float complex x[], const size_t n) {
+  assert(n > 0 && "Empty vector");
+  float m = cabsf(x[0]);
+  for (size_t i = 0; i < n; ++i) {
+    m = max(m, cabsf(x[i]));
+  }
+  return m;
+}
+
+void drawFrequency(void) {
 
   int err;
   // Locking mutex
@@ -102,9 +123,45 @@ void drawWave(void) {
            err);
     return;
   };
+
+  float samples[FFT_SIZE] = {0};
+  float complex frequencies[FFT_SIZE];
+  assert(FFT_SIZE >= FRAME_BUFFER_SIZE && "You need to increase the FFT_SIZE");
   for (unsigned int i = 0; i < FRAME_BUFFER_SIZE; ++i) {
-    float sleft = FRAME_BUFFER[i].left;
-    float sright = FRAME_BUFFER[i].right;
+    samples[i] = FRAME_BUFFER[i].left; // only take left channel
+  }
+  FRAME_BUFFER_SIZE = 0;
+
+  // Unlock mutex
+  if ((err = pthread_mutex_unlock(&BUFFER_LOCK)) != 0) {
+    printf("ERROR: Could not unlock mutex. Error code: %d. Quitting program.",
+           err);
+    exit(err);
+  }
+
+  // Compute FFT
+  fft(samples, frequencies, FFT_SIZE);
+
+  const float f_max = cmaxvf(frequencies, FFT_SIZE);
+  for (unsigned int i = 0; i < SCREEN_WIDTH; ++i) {
+    const float f = cabsf(frequencies[i]);
+    const int h = (float)GetScreenHeight() / f_max * f;
+    DrawRectangle(i, GetScreenHeight() - h, 1, h, RED);
+  }
+}
+
+void drawWave(void) {
+  int err;
+  // Locking mutex
+  if ((err = pthread_mutex_lock(&BUFFER_LOCK)) != 0) {
+    printf("WARNING could not lock mutex. Error code %d. Returning from "
+           "function.",
+           err);
+    return;
+  };
+  for (unsigned int i = 0; i < FRAME_BUFFER_SIZE; ++i) {
+    const float sleft = FRAME_BUFFER[i].left;
+    const float sright = FRAME_BUFFER[i].right;
     (void)sright;
     if (sleft > 0)
       DrawRectangle(i, GetScreenHeight() / 2, 1, sleft * GetScreenHeight() / 2,
@@ -123,15 +180,27 @@ void drawWave(void) {
   }
 }
 
-char *getFirstFile(FilePathList files) {
+void drawMusic(void) {
+  if (FRAME_BUFFER_SIZE == 0) {
+    return; // Nothing to draw
+  }
+
+#ifndef USE_WAVE
+  drawFrequency();
+#else
+  drawWave();
+#endif
+}
+
+const char *getFirstFile(const FilePathList files) {
   assert(files.count > 0 && "No files found");
   return files.paths[0];
 }
 
 Music playMusicFromFile(void) {
-  FilePathList files = LoadDroppedFiles();
-  char *file_path = getFirstFile(files);
-  Music music = LoadMusicStream(file_path);
+  const FilePathList files = LoadDroppedFiles();
+  const char *file_path = getFirstFile(files);
+  const Music music = LoadMusicStream(file_path);
   PlayMusicStream(music);
   UnloadDroppedFiles(files);
   printf("Frame count: %u\n", music.frameCount);
@@ -212,7 +281,7 @@ int main(void) {
 
     if (IsMusicReady(music)) {
 
-      drawWave();
+      drawMusic();
 
       // DrawText("MUSIC SHOULD BE PLAYING!", 255, 150, 20, WHITE);
       //

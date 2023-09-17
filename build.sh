@@ -2,11 +2,12 @@
 
 set -xe
 
-CFLAGS="-Wall -Wextra -Wpedantic -Og $(pkg-config --cflags raylib)"
-LFLAGS="$(pkg-config  --libs raylib) -lpthread"
+CFLAGS="-Wall -Wextra -Wpedantic -Ofast $(pkg-config --cflags raylib)"
+LFLAGS="$(pkg-config  --libs raylib) -lpthread -lm"
+SRC="main.c fft.c"
 
 # shellcheck disable=SC2086
-cc -o musializer main.c $CFLAGS $LFLAGS
+cc -o musializer $SRC $CFLAGS $LFLAGS
 
 # Tests
 CFLAGS_TEST="-Wall -Wextra -Wpedantic -Ofast"
