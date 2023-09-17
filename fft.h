@@ -5,10 +5,12 @@
 #include <math.h>
 #include <stddef.h>
 
-void dft(float in[], float complex out[], size_t n);
+void dft(float in[], float complex out[], const size_t n);
 
-void idft(float complex in[], float out[], size_t n);
+void idft(float complex in[], float out[], const size_t n);
 
-void fft(float in[], float complex out[], size_t n);
+void fft(float in[], float complex out[], const size_t n);
+
+void ifft(float complex in[], float out[], const size_t n);
 
 #endif // FFH_H

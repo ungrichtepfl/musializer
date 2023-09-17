@@ -56,6 +56,10 @@ int main(void) {
   fft(sig, freq, N);
   print_cvec(freq, N);
 
+  printf("------ Signal Reversed \n");
+  ifft(freq, sig_rev, N);
+  print_fvec(sig_rev, N);
+
   printf("\n====== PERFORMANCE ======\n");
 
   float sig_perf[P] = {0};
