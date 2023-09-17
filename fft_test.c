@@ -2,7 +2,7 @@
 #include <stdio.h>
 #include <time.h>
 
-#define P ((size_t)1 << 14)
+#define P ((size_t)1 << 15)
 #define N 8
 
 static inline void print_cvec(float complex sig[], size_t n) {
@@ -69,17 +69,18 @@ int main(void) {
     sig_perf[i] = dc + sinf(2 * M_PI * f1 * t) + cosf(2 * M_PI * f2 * t);
   }
   float complex freq_perf[P];
-  printf("N=%ld\n", P);
-  printf("======= DFT =======\n");
-  start = clock();
-  dft(sig_perf, freq_perf, P);
-  diff = clock() - start;
-  msec = diff * 1000 / CLOCKS_PER_SEC;
-  printf("Time taken %d seconds %d milliseconds\n", msec / 1000, msec % 1000);
+  printf("Signal length: %ld samples\n", P);
 
   printf("======= FFT =======\n");
   start = clock();
   fft(sig_perf, freq_perf, P);
+  diff = clock() - start;
+  msec = diff * 1000 / CLOCKS_PER_SEC;
+  printf("Time taken %d seconds %d milliseconds\n", msec / 1000, msec % 1000);
+
+  printf("======= DFT =======\n");
+  start = clock();
+  dft(sig_perf, freq_perf, P);
   diff = clock() - start;
   msec = diff * 1000 / CLOCKS_PER_SEC;
   printf("Time taken %d seconds %d milliseconds\n", msec / 1000, msec % 1000);
