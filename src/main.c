@@ -77,6 +77,7 @@ int main(void) {
 
     if (IsKeyPressed(KEY_R)) {
       // Reload plugins
+      DetachAudioStreamProcessor(music.stream, plugins->fillSampleBuffer);
       dlclose(libplug);
       void *libplug = dlopen(libplug_file_name, RTLD_LAZY);
 
@@ -85,6 +86,14 @@ int main(void) {
                 dlerror());
         return 1;
       }
+      plugins = dlsym(libplug, PLUG_SYM);
+      if (libplug == NULL) {
+        fprintf(stderr, "Could not load %s from %s: %s\n", PLUG_SYM,
+                libplug_file_name, dlerror());
+        return 1;
+      }
+
+      AttachAudioStreamProcessor(music.stream, plugins->fillSampleBuffer);
     }
     if (IsFileDropped()) {
       if (IsMusicReady(music))
