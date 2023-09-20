@@ -1,5 +1,6 @@
 #include <dlfcn.h>
 #include <errno.h>
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdio.h>
 
@@ -11,163 +12,62 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define SCREEN_WIDTH 800
-#define SCREEN_HEIGHT 450
-
-#define FPS 24
-
-#define ARRAY_LENGTH(x) (sizeof(x) / sizeof(x[0]))
-
-const char *getFirstFile(const FilePathList files) {
-  assert(files.count > 0 && "No files found");
-  return files.paths[0];
+PLUG *plugin = NULL;
+void *libplug = NULL;
+bool unloadPlugin(void) {
+  if (dlclose(libplug) != 0) {
+    fprintf(stderr, "Could not unload plugin: %s\n", dlerror());
+    return false;
+  }
+  return true;
 }
+bool loadPlugin(void) {
 
-Music playMusicFromFile(void) {
-  const FilePathList files = LoadDroppedFiles();
-  const char *file_path = getFirstFile(files);
-  const Music music = LoadMusicStream(file_path);
-  PlayMusicStream(music);
-  UnloadDroppedFiles(files);
-  printf("Frame count: %u\n", music.frameCount);
-  printf("Sample rate: %u\n", music.stream.sampleRate);
-  printf("Frame size: %u\n", music.frameCount);
-  return music;
+  const char *libplug_file_name = "build/libplug.so";
+
+  libplug = dlopen(libplug_file_name, RTLD_LAZY);
+
+  if (libplug == NULL) {
+    fprintf(stderr, "Could not load %s: %s\n", libplug_file_name, dlerror());
+    return false;
+  }
+  plugin = dlsym(libplug, PLUG_SYM);
+
+  if (plugin == NULL) {
+    fprintf(stderr, "Could not load %s from %s: %s\n", PLUG_SYM,
+            libplug_file_name, dlerror());
+    return false;
+  }
+
+  return true;
 }
 
 int main(void) {
 
-  const char *libplug_file_name = "build/libplug.so";
-
-  void *libplug = dlopen(libplug_file_name, RTLD_LAZY);
-
-  if (libplug == NULL) {
-    fprintf(stderr, "Could not load %s: %s\n", libplug_file_name, dlerror());
-    return 1;
-  }
-  PLUG plugins = dlsym(libplug, PLUG_SYM);
-  if (libplug == NULL) {
-    fprintf(stderr, "Could not load %s from %s: %s\n", PLUG_SYM,
-            libplug_file_name, dlerror());
+  if (!loadPlugin()) {
     return 1;
   }
 
-  if (pthread_mutex_init(plugins->BUFFER_LOCK, NULL) != 0) {
-    printf("\n mutex init failed\n");
-    return 1;
-  }
+  plugin->init();
 
-  InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "musializer");
-  InitAudioDevice();
+  while (!plugin->finished()) {
 
-  // Music that will be played
-  Music music;
-
-  float timePlayed = 0.0f; // Time played normalized [0.0f..1.0f]
-
-  SetTargetFPS(FPS); // Set our game to run at 30 frames-per-second
-  //--------------------------------------------------------------------------------------
-
-  // Main game loop
-  while (!WindowShouldClose()) // Detect window close button or ESC key
-  {
-
-    // Update
-    //----------------------------------------------------------------------------------
-
-    if (IsKeyPressed(KEY_R)) {
-      // Reload plugins
-      DetachAudioStreamProcessor(music.stream, plugins->fillSampleBuffer);
-      dlclose(libplug);
-      void *libplug = dlopen(libplug_file_name, RTLD_LAZY);
-
-      if (libplug == NULL) {
-        fprintf(stderr, "Could not load %s: %s\n", libplug_file_name,
-                dlerror());
+    if (plugin->reload()) {
+      printf("Hot reloading plugin\n");
+      State *state = plugin->getState();
+      if (!unloadPlugin())
+        return 1;
+      if (!loadPlugin())
+        return 1;
+      if (!plugin->resume(state)) {
+        fprintf(stderr, "Could not resume plugin\n");
         return 1;
       }
-      plugins = dlsym(libplug, PLUG_SYM);
-      if (libplug == NULL) {
-        fprintf(stderr, "Could not load %s from %s: %s\n", PLUG_SYM,
-                libplug_file_name, dlerror());
-        return 1;
-      }
-
-      AttachAudioStreamProcessor(music.stream, plugins->fillSampleBuffer);
+      continue;
     }
-    if (IsFileDropped()) {
-      if (IsMusicReady(music))
-        // Detach if already loaded
-        DetachAudioStreamProcessor(music.stream, plugins->fillSampleBuffer);
-
-      music = playMusicFromFile();
-
-      *(plugins->CHANNELS) = music.stream.channels;
-
-      // Reset buffer
-      *(plugins->FRAME_BUFFER_SIZE) = 0;
-      // Attach to new music stream
-      AttachAudioStreamProcessor(music.stream, plugins->fillSampleBuffer);
-    }
-
-    if (IsMusicReady(music)) {
-      UpdateMusicStream(music); // Update music buffer with new stream data
-
-      // Restart music playing (stop and play)
-      if (IsKeyPressed(KEY_SPACE)) {
-        StopMusicStream(music);
-        PlayMusicStream(music);
-      }
-
-      // Pause/Resume music playing
-      if (IsKeyPressed(KEY_P)) {
-
-        if (IsMusicStreamPlaying(music))
-          PauseMusicStream(music);
-        else
-          ResumeMusicStream(music);
-      }
-
-      // Get normalized time played for current music stream
-      timePlayed = GetMusicTimePlayed(music) / GetMusicTimeLength(music);
-
-      if (timePlayed > 1.0f)
-        timePlayed = 1.0f; // Make sure time played is no longer than music
-    }
-
-    //----------------------------------------------------------------------------------
-
-    // Draw
-    //----------------------------------------------------------------------------------
-    BeginDrawing();
-
-    ClearBackground(BLACK);
-
-    if (IsMusicReady(music)) {
-
-      plugins->drawMusic();
-
-      // DrawText("MUSIC SHOULD BE PLAYING!", 255, 150, 20, WHITE);
-      //
-      // DrawRectangle(200, 200, 400, 12, WHITE);
-      // DrawRectangle(200, 200, (int)(timePlayed * 400.0f), 12, RED);
-      // DrawRectangleLines(200, 200, 400, 12, LIGHTGRAY);
-      //
-      // DrawText("PRESS SPACE TO RESTART MUSIC", 215, 250, 20, WHITE);
-      // DrawText("PRESS P TO PAUSE/RESUME MUSIC", 208, 280, 20, WHITE);
-    } else {
-      DrawText("DRAG AND DROP A MUSIC FILE", 235, 200, 20, WHITE);
-    }
-
-    EndDrawing();
-    //----------------------------------------------------------------------------------
+    plugin->update();
   }
-  // Clean up
-  DetachAudioStreamProcessor(music.stream, plugins->fillSampleBuffer);
-  UnloadMusicStream(music);
-  CloseAudioDevice();
-  CloseWindow();
-  pthread_mutex_destroy(plugins->BUFFER_LOCK);
-  dlclose(libplug);
+  plugin->terminate();
+
   return 0;
 }

@@ -2,12 +2,19 @@
 #include "fft.h"
 #include <assert.h>
 #include <errno.h>
+#include <pthread.h>
 #include <raylib.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-void plug_hello(void) { printf("Hello from plugin!\n"); }
+#define SCREEN_WIDTH 800
+#define SCREEN_HEIGHT 450
+
+#define FPS 24
+
+#define ARRAY_LENGTH(x) (sizeof(x) / sizeof(x[0]))
 
 unsigned int CHANNELS = 2;
 
@@ -35,6 +42,33 @@ pthread_mutex_t BUFFER_LOCK;
 #define FFT_SIZE 2048
 
 #define max(a, b) (a > b ? a : b)
+
+Music MUSIC;
+
+typedef struct State {
+  bool finished;
+  bool reload;
+  float timePlayedSeconds;
+  char musicFile[255];
+} State;
+
+State *STATE;
+const char *getFirstFile(const FilePathList files) {
+  assert(files.count > 0 && "No files found");
+  return files.paths[0];
+}
+
+void playMusicFromFile(void) {
+  const FilePathList files = LoadDroppedFiles();
+  const char *file_path = getFirstFile(files);
+  strcpy(STATE->musicFile, file_path);
+  MUSIC = LoadMusicStream(file_path);
+  PlayMusicStream(MUSIC);
+  UnloadDroppedFiles(files);
+  printf("Frame count: %u\n", MUSIC.frameCount);
+  printf("Sample rate: %u\n", MUSIC.stream.sampleRate);
+  printf("Frame size: %u\n", MUSIC.frameCount);
+}
 
 static inline float fmaxvf(const float x[], const size_t n) {
   assert(n > 0 && "Empty vector");
@@ -87,7 +121,7 @@ void drawFrequency(void) {
   for (int i = 0; i < GetScreenWidth(); ++i) {
     const float f = cabsf(frequencies[i]);
     const int h = (float)GetScreenHeight() / f_max * f;
-    DrawRectangle(i, GetScreenHeight() - h, 1, h, GREEN);
+    DrawRectangle(i, GetScreenHeight() - h, 1, h, BLUE);
   }
 }
 
@@ -106,7 +140,7 @@ void drawWave(void) {
     (void)sright;
     if (sleft > 0)
       DrawRectangle(i, GetScreenHeight() / 2, 1, sleft * GetScreenHeight() / 2,
-                    RED);
+                    BLUE);
     else
       DrawRectangle(
           i, (float)GetScreenHeight() / 2 + sleft * GetScreenHeight() / 2, 1,
@@ -125,6 +159,8 @@ void drawMusic(void) {
   if (FRAME_BUFFER_SIZE == 0) {
     return; // Nothing to draw
   }
+
+// #define USE_WAVE
 
 #ifndef USE_WAVE
   drawFrequency();
@@ -184,6 +220,156 @@ void fillSampleBuffer(void *buffer, unsigned int frames) {
     exit(err);
   }
 }
+bool initInternal(void) {
 
-const exports_t exports = {plug_hello,   fillSampleBuffer, drawMusic,
-                           &BUFFER_LOCK, &CHANNELS,        &FRAME_BUFFER_SIZE};
+  if (pthread_mutex_init(&BUFFER_LOCK, NULL) != 0) {
+    printf("\n mutex init failed\n");
+    return false;
+  }
+  InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "musializer");
+  InitAudioDevice();
+
+  SetTargetFPS(FPS); // Set our game to run at 30 frames-per-second
+  return true;
+}
+
+bool init(void) {
+
+  if (!initInternal()) {
+    return false;
+  }
+
+  STATE = malloc(sizeof(State));
+
+  // No need to initialize MUSIC otherwise it segfaults
+  STATE->finished = false;
+  STATE->reload = false;
+  STATE->timePlayedSeconds = 0.0f; // Time played normalized [0.0f..1.0f]
+
+  return true;
+}
+
+bool resume(State *state) {
+
+  if (!initInternal()) {
+    return false;
+  }
+  STATE = state;
+  STATE->reload = false;
+  if (strlen(STATE->musicFile) != 0) {
+    MUSIC = LoadMusicStream(STATE->musicFile);
+    PlayMusicStream(MUSIC);
+    SeekMusicStream(MUSIC, STATE->timePlayedSeconds);
+    AttachAudioStreamProcessor(MUSIC.stream, fillSampleBuffer);
+  }
+  return true;
+}
+
+State *getState(void) { return STATE; }
+
+bool finished(void) { return STATE->finished; }
+
+void terminateInternal(void) {
+
+  if (IsMusicReady(MUSIC)) {
+    DetachAudioStreamProcessor(MUSIC.stream, fillSampleBuffer);
+    UnloadMusicStream(MUSIC);
+  }
+  CloseAudioDevice();
+  CloseWindow();
+  pthread_mutex_destroy(&BUFFER_LOCK);
+}
+
+void terminate(void) {
+  terminateInternal();
+
+  free(STATE);
+}
+bool reload() { return STATE->reload; }
+
+void update(void) {
+
+  // Main game loop
+  if (WindowShouldClose()) // Detect window close button or ESC key
+  {
+    STATE->finished = true;
+    return;
+  }
+
+  // Update
+  //----------------------------------------------------------------------------------
+
+  if (IsKeyPressed(KEY_R)) {
+    // Reload plugins
+    STATE->reload = true;
+    terminateInternal();
+    return;
+  }
+
+  if (IsFileDropped()) {
+    if (IsMusicReady(MUSIC))
+      // Detach if already loaded
+      DetachAudioStreamProcessor(MUSIC.stream, fillSampleBuffer);
+
+    playMusicFromFile();
+
+    CHANNELS = MUSIC.stream.channels;
+
+    // Reset buffer
+    FRAME_BUFFER_SIZE = 0;
+    // Attach to new music stream
+    AttachAudioStreamProcessor(MUSIC.stream, fillSampleBuffer);
+  }
+
+  if (IsMusicReady(MUSIC)) {
+    UpdateMusicStream(MUSIC); // Update music buffer with new stream data
+
+    // Restart music playing (stop and play)
+    if (IsKeyPressed(KEY_SPACE)) {
+      StopMusicStream(MUSIC);
+      PlayMusicStream(MUSIC);
+    }
+
+    // Pause/Resume music playing
+    if (IsKeyPressed(KEY_P)) {
+
+      if (IsMusicStreamPlaying(MUSIC))
+        PauseMusicStream(MUSIC);
+      else
+        ResumeMusicStream(MUSIC);
+    }
+
+    // Get normalized time played for current music stream
+    STATE->timePlayedSeconds = GetMusicTimePlayed(MUSIC);
+  }
+
+  //----------------------------------------------------------------------------------
+
+  // Draw
+  //----------------------------------------------------------------------------------
+  BeginDrawing();
+
+  ClearBackground(BLACK);
+
+  if (IsMusicReady(MUSIC)) {
+
+    drawMusic();
+
+    // DrawText("MUSIC SHOULD BE PLAYING!", 255, 150, 20, WHITE);
+    //
+    // DrawRectangle(200, 200, 400, 12, WHITE);
+    // DrawRectangle(200, 200, (int)(timePlayed * 400.0f), 12, RED);
+    // DrawRectangleLines(200, 200, 400, 12, LIGHTGRAY);
+    //
+    // DrawText("PRESS SPACE TO RESTART MUSIC", 215, 250, 20, WHITE);
+    // DrawText("PRESS P TO PAUSE/RESUME MUSIC", 208, 280, 20, WHITE);
+  } else {
+    DrawText("DRAG AND DROP A MUSIC FILE", 235, 200, 20, WHITE);
+  }
+
+  EndDrawing();
+  //----------------------------------------------------------------------------------
+}
+
+const exports_t exports = {init,   update,   getState, reload,
+                           resume, finished, terminate};
