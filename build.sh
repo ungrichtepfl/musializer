@@ -4,11 +4,11 @@ set -xe
 
 mkdir -p ./build
 
-CFLAGS="-Wall -Wextra -Wpedantic -Og $(pkg-config --cflags raylib)"
-LFLAGS="$(pkg-config  --libs raylib) -lpthread -lm"
+CFLAGS="-Wall -Wextra -Wpedantic -Og"
+LFLAGS="-ldl"
 
 # shellcheck disable=SC2086
-cc -o ./build/musializer ./src/main.c $CFLAGS $LFLAGS -ldl 
+cc -o ./build/musializer ./src/main.c $CFLAGS $LFLAGS
 
 # Tests
 CFLAGS_TEST="-Wall -Wextra -Wpedantic -Ofast"
