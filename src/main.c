@@ -1,19 +1,19 @@
 #include <dlfcn.h>
 #include <errno.h>
+#include <poll.h>
 #include <stdbool.h>
-#include <stddef.h>
 #include <stdio.h>
-
-#include "plug.h"
-#include <assert.h>
-#include <pthread.h>
-#include <raylib.h>
-#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/inotify.h>
+#include <unistd.h>
 
+#include "plug.h"
+
+#define LIBPLUG_FILE_NAME "build/libplug.so"
 PLUG *plugin = NULL;
 void *libplug = NULL;
+
 bool unloadPlugin(void) {
   if (dlclose(libplug) != 0) {
     fprintf(stderr, "Could not unload plugin: %s\n", dlerror());
@@ -23,24 +23,39 @@ bool unloadPlugin(void) {
 }
 bool loadPlugin(void) {
 
-  const char *libplug_file_name = "build/libplug.so";
-
-  libplug = dlopen(libplug_file_name, RTLD_LAZY);
+  libplug = dlopen(LIBPLUG_FILE_NAME, RTLD_LAZY);
 
   if (libplug == NULL) {
-    fprintf(stderr, "Could not load %s: %s\n", libplug_file_name, dlerror());
+    fprintf(stderr, "Could not load %s: %s\n", LIBPLUG_FILE_NAME, dlerror());
     return false;
   }
   plugin = dlsym(libplug, PLUG_SYM);
 
   if (plugin == NULL) {
     fprintf(stderr, "Could not load %s from %s: %s\n", PLUG_SYM,
-            libplug_file_name, dlerror());
+            LIBPLUG_FILE_NAME, dlerror());
     return false;
   }
 
   return true;
 }
+
+bool hotReload(void) {
+  State *state = plugin->getState();
+  if (!unloadPlugin())
+    return false;
+  if (!loadPlugin())
+    return false;
+  if (!plugin->resume(state)) {
+    fprintf(stderr, "Could not resume plugin\n");
+    return false;
+  }
+  return true;
+}
+
+bool PLUG_MODIFIED = false;
+
+bool dynlibModified(void) { return false; }
 
 int main(void) {
 
@@ -51,20 +66,15 @@ int main(void) {
   plugin->init();
 
   while (!plugin->finished()) {
+    const bool plug_modified = plugin->reload() | dynlibModified();
 
-    if (plugin->reload()) {
-      printf("Hot reloading plugin\n");
-      State *state = plugin->getState();
-      if (!unloadPlugin())
+    if (plug_modified) {
+      printf("Plugin file was modified!\n");
+      if (!hotReload())
         return 1;
-      if (!loadPlugin())
-        return 1;
-      if (!plugin->resume(state)) {
-        fprintf(stderr, "Could not resume plugin\n");
-        return 1;
-      }
       continue;
     }
+
     plugin->update();
   }
   plugin->terminate();
