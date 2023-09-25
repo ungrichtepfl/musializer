@@ -25,7 +25,7 @@ bool unloadPlugin(void) {
 
 bool loadPlugin(void) {
 
-  libplug = dlopen(LIBPLUG_FILE_NAME, RTLD_LAZY);
+  libplug = dlopen(LIBPLUG_FILE_NAME, RTLD_NOW);
 
   if (libplug == NULL) {
     fprintf(stderr, "Could not load %s: %s\n", LIBPLUG_FILE_NAME, dlerror());
@@ -148,10 +148,6 @@ bool dynlibModified(bool *modified, int *fd, int *wd, struct pollfd *pfd) {
 
 int main(void) {
 
-  if (!loadPlugin()) {
-    return 1;
-  }
-
   int fd = -1;
   int wd = -1;
   struct pollfd pfd = {0};
@@ -159,6 +155,9 @@ int main(void) {
     return 1;
   }
 
+  if (!loadPlugin()) {
+    return 1;
+  }
   plugin->init();
 
   while (!plugin->finished()) {
@@ -172,7 +171,6 @@ int main(void) {
       printf("Plugin file was modified!\n");
       if (!hotReload())
         return 1;
-      continue;
     }
 
     plugin->update();

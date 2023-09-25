@@ -12,7 +12,7 @@
 #define SCREEN_WIDTH 800
 #define SCREEN_HEIGHT 450
 
-#define FPS 24
+#define FPS 60
 
 #define ARRAY_LENGTH(x) (sizeof(x) / sizeof(x[0]))
 
@@ -110,7 +110,6 @@ static void drawFrequency(void) {
   for (unsigned int i = 0; i < FRAME_BUFFER_SIZE; ++i) {
     samples[i] = FRAME_BUFFER[i].left; // only take left channel
   }
-  FRAME_BUFFER_SIZE = 0;
 
   // Unlock mutex
   if ((err = pthread_mutex_unlock(&BUFFER_LOCK)) != 0) {
@@ -133,6 +132,9 @@ static void drawFrequency(void) {
 #else
 
 static void drawWave(void) {
+  if (FRAME_BUFFER_SIZE == 0)
+    return; // Nothing to draw
+
   int err;
   // Locking mutex
   if ((err = pthread_mutex_lock(&BUFFER_LOCK)) != 0) {
@@ -141,19 +143,19 @@ static void drawWave(void) {
            err);
     return;
   };
-  for (unsigned int i = 0; i < FRAME_BUFFER_SIZE; ++i) {
+  for (long i = 0; i < (long)FRAME_BUFFER_SIZE; ++i) {
     const float sleft = FRAME_BUFFER[i].left;
     const float sright = FRAME_BUFFER[i].right;
     (void)sright;
     if (sleft > 0)
-      DrawRectangle(i, GetScreenHeight() / 2, 1, sleft * GetScreenHeight() / 2,
-                    BLUE);
+      DrawRectangle((long)FRAME_BUFFER_SIZE - 1 - i, GetScreenHeight() / 2, 1,
+                    sleft * GetScreenHeight() / 2, BLUE);
     else
-      DrawRectangle(
-          i, (float)GetScreenHeight() / 2 + sleft * GetScreenHeight() / 2, 1,
-          -sleft * GetScreenHeight() / 2, RED);
+      DrawRectangle((long)FRAME_BUFFER_SIZE - 1 - i,
+                    (float)GetScreenHeight() / 2 +
+                        sleft * GetScreenHeight() / 2,
+                    1, -sleft * GetScreenHeight() / 2, RED);
   }
-  FRAME_BUFFER_SIZE = 0;
   // Unlock mutex
   if ((err = pthread_mutex_unlock(&BUFFER_LOCK)) != 0) {
     printf("ERROR: Could not unlock mutex. Error code: %d. Quitting program.",
@@ -183,25 +185,10 @@ static void fillSampleBuffer(void *buffer, unsigned int frames) {
   if (frames == 0)
     return; // Nothing to do! TODO: Check if this even can happen.
   assert(CHANNELS == 2 && "Does only support music with 2 channels.");
+  const float *samples = (float *)buffer;
 
-  unsigned int frames_to_copy = 0;
-  unsigned int offset = 0;
   const unsigned int available_frames_to_fill =
       FRAME_BUFFER_CAPACITY - FRAME_BUFFER_SIZE;
-
-  if (frames >= FRAME_BUFFER_CAPACITY) {
-    // Just fill all up with new values.
-    offset = 0;
-    frames_to_copy = FRAME_BUFFER_CAPACITY;
-  } else if (frames > available_frames_to_fill) {
-    // Just start again with the newest frames
-    offset = 0;
-    frames_to_copy = frames;
-  } else {
-    // Append the frames to the buffer
-    offset = FRAME_BUFFER_SIZE;
-    frames_to_copy = frames;
-  }
 
   int err;
   // lock mutex
@@ -214,11 +201,33 @@ static void fillSampleBuffer(void *buffer, unsigned int frames) {
     // Do not waste time. Just try next time.
     return;
   }
-  memcpy(FRAME_BUFFER + offset, buffer,
-         frames_to_copy *
-             sizeof(Frames)); // HACK: This only works for two channel audio
-                              //  because Frames contains 2 floats.
-  FRAME_BUFFER_SIZE = offset + frames_to_copy;
+
+  if (frames <= available_frames_to_fill) {
+    memcpy(FRAME_BUFFER + FRAME_BUFFER_SIZE, samples,
+           frames *
+               sizeof(Frames)); // HACK: This only works for two channel audio
+                                //  because Frames contains 2 floats.
+    FRAME_BUFFER_SIZE += frames;
+  } else if (frames >= FRAME_BUFFER_CAPACITY) {
+    memcpy(FRAME_BUFFER, &samples[frames - FRAME_BUFFER_CAPACITY],
+           FRAME_BUFFER_CAPACITY *
+               sizeof(Frames)); // HACK: This only works for two channel audio
+                                //  because Frames contains 2 floats.
+    FRAME_BUFFER_SIZE = FRAME_BUFFER_CAPACITY;
+  } else {
+    assert(FRAME_BUFFER_CAPACITY < frames + FRAME_BUFFER_SIZE);
+    unsigned int diff = frames + FRAME_BUFFER_SIZE - FRAME_BUFFER_CAPACITY;
+    memmove(FRAME_BUFFER, &FRAME_BUFFER[diff],
+            (FRAME_BUFFER_SIZE - diff) *
+                sizeof(Frames)); // HACK: This only works for two channel audio
+                                 //  because Frames contains 2 floats.)
+    memcpy(&FRAME_BUFFER[FRAME_BUFFER_SIZE - diff], samples,
+           frames *
+               sizeof(Frames)); // HACK: This only works for two channel audio
+                                //  because Frames contains 2 floats.
+                                //  FRAME_BUFFER_SIZE = FRAME_BUFFER_CAPACITY;
+    FRAME_BUFFER_SIZE = FRAME_BUFFER_CAPACITY;
+  }
 
   // Unlock mutex
   if ((err = pthread_mutex_unlock(&BUFFER_LOCK)) != 0) {
@@ -265,13 +274,13 @@ bool resume(State *state) {
   }
   STATE = state;
   STATE->reload = false;
-  SetWindowPosition(STATE->window_pos.x, STATE->window_pos.y);
   if (strlen(STATE->musicFile) != 0) {
     MUSIC = LoadMusicStream(STATE->musicFile);
     PlayMusicStream(MUSIC);
     SeekMusicStream(MUSIC, STATE->timePlayedSeconds);
     AttachAudioStreamProcessor(MUSIC.stream, fillSampleBuffer);
   }
+  SetWindowPosition(STATE->window_pos.x, STATE->window_pos.y);
   return true;
 }
 
