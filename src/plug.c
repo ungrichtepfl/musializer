@@ -50,6 +50,7 @@ typedef struct State {
   bool reload;
   float timePlayedSeconds;
   char musicFile[255];
+  Vector2 window_pos;
 } State;
 
 State *STATE;
@@ -252,6 +253,7 @@ bool init(void) {
   STATE->finished = false;
   STATE->reload = false;
   STATE->timePlayedSeconds = 0.0f; // Time played normalized [0.0f..1.0f]
+  STATE->window_pos = GetWindowPosition();
 
   return true;
 }
@@ -263,6 +265,7 @@ bool resume(State *state) {
   }
   STATE = state;
   STATE->reload = false;
+  SetWindowPosition(STATE->window_pos.x, STATE->window_pos.y);
   if (strlen(STATE->musicFile) != 0) {
     MUSIC = LoadMusicStream(STATE->musicFile);
     PlayMusicStream(MUSIC);
@@ -308,6 +311,8 @@ void update(void) {
 
   // Update
   //----------------------------------------------------------------------------------
+
+  STATE->window_pos = GetWindowPosition();
 
   if (IsKeyPressed(KEY_R)) {
     // Reload plugins

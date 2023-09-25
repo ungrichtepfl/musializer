@@ -22,6 +22,7 @@ bool unloadPlugin(void) {
   }
   return true;
 }
+
 bool loadPlugin(void) {
 
   libplug = dlopen(LIBPLUG_FILE_NAME, RTLD_LAZY);
@@ -74,6 +75,7 @@ bool init_watches(int *fd_, int *wd_, struct pollfd *pfd_) {
   *wd_ = wd;
   return true;
 }
+
 bool dynlibModified(bool *modified, int *fd, int *wd, struct pollfd *pfd) {
 
   const int poll_num = poll(pfd, 1, 1); // block for 1ms
@@ -143,6 +145,7 @@ bool dynlibModified(bool *modified, int *fd, int *wd, struct pollfd *pfd) {
   }
   return true;
 }
+
 int main(void) {
 
   if (!loadPlugin()) {
