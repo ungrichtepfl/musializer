@@ -13,6 +13,7 @@ typedef struct {
   void (*update)(void);
   State *(*getState)(void);
   bool (*reload)(void);
+  void (*pause)(void);
   bool (*resume)(State *);
   bool (*finished)(void);
   void (*terminate)(void);

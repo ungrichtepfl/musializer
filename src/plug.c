@@ -220,6 +220,7 @@ void fillSampleBuffer(void *buffer, unsigned int frames) {
     exit(err);
   }
 }
+
 bool initInternal(void) {
 
   if (pthread_mutex_init(&BUFFER_LOCK, NULL) != 0) {
@@ -285,6 +286,9 @@ void terminate(void) {
 
   free(STATE);
 }
+
+void pausePlugin(void) { terminateInternal(); }
+
 bool reload() { return STATE->reload; }
 
 void update(void) {
@@ -302,7 +306,6 @@ void update(void) {
   if (IsKeyPressed(KEY_R)) {
     // Reload plugins
     STATE->reload = true;
-    terminateInternal();
     return;
   }
 
@@ -371,5 +374,5 @@ void update(void) {
   //----------------------------------------------------------------------------------
 }
 
-const exports_t exports = {init,   update,   getState, reload,
-                           resume, finished, terminate};
+const exports_t exports = {init,        update, getState, reload,
+                           pausePlugin, resume, finished, terminate};
