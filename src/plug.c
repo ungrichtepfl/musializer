@@ -53,12 +53,13 @@ typedef struct State {
 } State;
 
 State *STATE;
-const char *getFirstFile(const FilePathList files) {
+
+static const char *getFirstFile(const FilePathList files) {
   assert(files.count > 0 && "No files found");
   return files.paths[0];
 }
 
-void playMusicFromFile(void) {
+static void playMusicFromFile(void) {
   const FilePathList files = LoadDroppedFiles();
   const char *file_path = getFirstFile(files);
   strcpy(STATE->musicFile, file_path);
@@ -88,7 +89,10 @@ static inline float cmaxvf(const float complex x[], const size_t n) {
   return m;
 }
 
-void drawFrequency(void) {
+// #define USE_WAVE
+
+#ifndef USE_WAVE
+static void drawFrequency(void) {
 
   int err;
   // Locking mutex
@@ -125,7 +129,9 @@ void drawFrequency(void) {
   }
 }
 
-void drawWave(void) {
+#else
+
+static void drawWave(void) {
   int err;
   // Locking mutex
   if ((err = pthread_mutex_lock(&BUFFER_LOCK)) != 0) {
@@ -155,12 +161,12 @@ void drawWave(void) {
   }
 }
 
-void drawMusic(void) {
+#endif
+
+static void drawMusic(void) {
   if (FRAME_BUFFER_SIZE == 0) {
     return; // Nothing to draw
   }
-
-// #define USE_WAVE
 
 #ifndef USE_WAVE
   drawFrequency();
@@ -172,7 +178,7 @@ void drawMusic(void) {
 // NOTE: From raudio.c:1269 (LoadMusicStream) of raylib:
 //  We are loading samples are 32bit float normalized data, so,
 //  we configure the output audio stream to also use float 32bit
-void fillSampleBuffer(void *buffer, unsigned int frames) {
+static void fillSampleBuffer(void *buffer, unsigned int frames) {
   if (frames == 0)
     return; // Nothing to do! TODO: Check if this even can happen.
   assert(CHANNELS == 2 && "Does only support music with 2 channels.");
@@ -221,7 +227,7 @@ void fillSampleBuffer(void *buffer, unsigned int frames) {
   }
 }
 
-bool initInternal(void) {
+static bool initInternal(void) {
 
   if (pthread_mutex_init(&BUFFER_LOCK, NULL) != 0) {
     printf("\n mutex init failed\n");
@@ -270,7 +276,7 @@ State *getState(void) { return STATE; }
 
 bool finished(void) { return STATE->finished; }
 
-void terminateInternal(void) {
+static void terminateInternal(void) {
 
   if (IsMusicReady(MUSIC)) {
     DetachAudioStreamProcessor(MUSIC.stream, fillSampleBuffer);
