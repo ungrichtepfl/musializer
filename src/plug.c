@@ -51,6 +51,7 @@ typedef struct State {
   float timePlayedSeconds;
   char musicFile[255];
   Vector2 window_pos;
+  float max;
 } State;
 
 State *STATE;
@@ -122,9 +123,10 @@ static void drawFrequency(void) {
   fft(samples, frequencies, FFT_SIZE);
 
   const float f_max = cmaxvf(frequencies, FFT_SIZE);
+  STATE->max = max(STATE->max, f_max);
   for (int i = 0; i < GetScreenWidth(); ++i) {
     const float f = cabsf(frequencies[i]);
-    const int h = (float)GetScreenHeight() / f_max * f;
+    const int h = (float)GetScreenHeight() / STATE->max * f;
     DrawRectangle(i, GetScreenHeight() - h, 1, h, BLUE);
   }
 }
@@ -143,18 +145,15 @@ static void drawWave(void) {
            err);
     return;
   };
-  for (long i = 0; i < (long)FRAME_BUFFER_SIZE; ++i) {
+  for (long i = 0; i < FRAME_BUFFER_SIZE; ++i) {
     const float sleft = FRAME_BUFFER[i].left;
-    const float sright = FRAME_BUFFER[i].right;
-    (void)sright;
     if (sleft > 0)
-      DrawRectangle((long)FRAME_BUFFER_SIZE - 1 - i, GetScreenHeight() / 2, 1,
-                    sleft * GetScreenHeight() / 2, BLUE);
+      DrawRectangle(i, GetScreenHeight() / 2, 1, sleft * GetScreenHeight() / 2,
+                    BLUE);
     else
-      DrawRectangle((long)FRAME_BUFFER_SIZE - 1 - i,
-                    (float)GetScreenHeight() / 2 +
-                        sleft * GetScreenHeight() / 2,
-                    1, -sleft * GetScreenHeight() / 2, RED);
+      DrawRectangle(
+          i, (float)GetScreenHeight() / 2 + sleft * GetScreenHeight() / 2, 1,
+          -sleft * GetScreenHeight() / 2, RED);
   }
   // Unlock mutex
   if ((err = pthread_mutex_unlock(&BUFFER_LOCK)) != 0) {
@@ -216,7 +215,8 @@ static void fillSampleBuffer(void *buffer, unsigned int frames) {
     FRAME_BUFFER_SIZE = FRAME_BUFFER_CAPACITY;
   } else {
     assert(FRAME_BUFFER_CAPACITY < frames + FRAME_BUFFER_SIZE);
-    unsigned int diff = frames + FRAME_BUFFER_SIZE - FRAME_BUFFER_CAPACITY;
+    const unsigned int diff =
+        frames + FRAME_BUFFER_SIZE - FRAME_BUFFER_CAPACITY;
     memmove(FRAME_BUFFER, &FRAME_BUFFER[diff],
             (FRAME_BUFFER_SIZE - diff) *
                 sizeof(Frames)); // HACK: This only works for two channel audio
@@ -262,6 +262,7 @@ bool init(void) {
   STATE->finished = false;
   STATE->reload = false;
   STATE->timePlayedSeconds = 0.0f; // Time played normalized [0.0f..1.0f]
+  STATE->max = 1.0;                // Start as if they are normalized
   STATE->window_pos = GetWindowPosition();
 
   return true;
@@ -274,6 +275,7 @@ bool resume(State *state) {
   }
   STATE = state;
   STATE->reload = false;
+  STATE->max = 1.0; // Start as if they are normalized
   if (strlen(STATE->musicFile) != 0) {
     MUSIC = LoadMusicStream(STATE->musicFile);
     PlayMusicStream(MUSIC);
