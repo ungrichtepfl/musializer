@@ -16,7 +16,7 @@
 
 #define ARRAY_LENGTH(x) (sizeof(x) / sizeof(x[0]))
 
-unsigned int CHANNELS = 2;
+static unsigned int CHANNELS = 2;
 
 typedef struct Frames {
   // TODO: Check which is left and which is right
@@ -26,7 +26,7 @@ typedef struct Frames {
 
 #define FRAME_BUFFER_CAPACITY 800
 static Frames FRAME_BUFFER[FRAME_BUFFER_CAPACITY] = {0};
-unsigned int FRAME_BUFFER_SIZE = 0;
+static unsigned int FRAME_BUFFER_SIZE = 0;
 #define FRAME_BUFFER_SIZE_BYTES (FRAME_BUFFER_SIZE * sizeof(Frames))
 #define FRAME_BUFFER_UNINITIALIZED_ELEMS                                       \
   (((long)FRAME_BUFFER_CAPACITY - (long)FRAME_BUFFER_SIZE < 0)                 \
@@ -37,13 +37,13 @@ unsigned int FRAME_BUFFER_SIZE = 0;
 #define FRAMES_TO_SAMPLES(frames) (frames * CHANNELS)
 #define SAMPLES_TO_FRAMES(frames) (frames / CHANNELS)
 
-pthread_mutex_t BUFFER_LOCK;
+static pthread_mutex_t BUFFER_LOCK;
 
 #define FFT_SIZE 2048
 
 #define max(a, b) (a > b ? a : b)
 
-Music MUSIC;
+static Music MUSIC;
 
 typedef struct State {
   bool finished;
@@ -54,7 +54,39 @@ typedef struct State {
   float max;
 } State;
 
-State *STATE;
+static State *STATE;
+
+static bool lockBuffer(void) {
+  int err;
+  // Locking mutex
+  if ((err = pthread_mutex_lock(&BUFFER_LOCK)) != 0) {
+    printf("WARNING: Could not lock mutex: %s.", strerror(err));
+    return false;
+  }
+  return true;
+}
+
+static bool tryLockBuffer(void) {
+  int err;
+  if ((err = pthread_mutex_trylock(&BUFFER_LOCK)) != 0) {
+    if (err != EBUSY) {
+      fprintf(stderr, "WARNING: Failed trying to lock mutex: %s.",
+              strerror(err));
+    }
+    return false;
+  }
+  return true;
+}
+
+static void unlockBuffer(void) {
+  int err;
+  // Unlock mutex
+  if ((err = pthread_mutex_unlock(&BUFFER_LOCK)) != 0) {
+    fprintf(stderr, "FATAL: Could not unlock mutex. %s. Quitting program.",
+            strerror(err));
+    exit(EXIT_FAILURE); // panic
+  }
+}
 
 static const char *getFirstFile(const FilePathList files) {
   assert(files.count > 0 && "No files found");
@@ -96,14 +128,8 @@ static inline float cmaxvf(const float complex x[], const size_t n) {
 #ifndef USE_WAVE
 static void drawFrequency(void) {
 
-  int err;
-  // Locking mutex
-  if ((err = pthread_mutex_lock(&BUFFER_LOCK)) != 0) {
-    printf("WARNING could not lock mutex. Error code %d. Returning from "
-           "function.",
-           err);
+  if (!lockBuffer())
     return;
-  };
 
   float samples[FFT_SIZE] = {0};
   float complex frequencies[FFT_SIZE];
@@ -112,12 +138,7 @@ static void drawFrequency(void) {
     samples[i] = FRAME_BUFFER[i].left; // only take left channel
   }
 
-  // Unlock mutex
-  if ((err = pthread_mutex_unlock(&BUFFER_LOCK)) != 0) {
-    printf("ERROR: Could not unlock mutex. Error code: %d. Quitting program.",
-           err);
-    exit(err);
-  }
+  unlockBuffer();
 
   // Compute FFT
   fft(samples, frequencies, FFT_SIZE);
@@ -137,14 +158,9 @@ static void drawWave(void) {
   if (FRAME_BUFFER_SIZE == 0)
     return; // Nothing to draw
 
-  int err;
-  // Locking mutex
-  if ((err = pthread_mutex_lock(&BUFFER_LOCK)) != 0) {
-    printf("WARNING could not lock mutex. Error code %d. Returning from "
-           "function.",
-           err);
+  if (!lockBuffer())
     return;
-  };
+
   for (long i = 0; i < FRAME_BUFFER_SIZE; ++i) {
     const float sleft = FRAME_BUFFER[i].left;
     if (sleft > 0)
@@ -155,12 +171,8 @@ static void drawWave(void) {
           i, (float)GetScreenHeight() / 2 + sleft * GetScreenHeight() / 2, 1,
           -sleft * GetScreenHeight() / 2, RED);
   }
-  // Unlock mutex
-  if ((err = pthread_mutex_unlock(&BUFFER_LOCK)) != 0) {
-    printf("ERROR: Could not unlock mutex. Error code: %d. Quitting program.",
-           err);
-    exit(err);
-  }
+
+  unlockBuffer();
 }
 
 #endif
@@ -189,17 +201,8 @@ static void fillSampleBuffer(void *buffer, unsigned int frames) {
   const unsigned int available_frames_to_fill =
       FRAME_BUFFER_CAPACITY - FRAME_BUFFER_SIZE;
 
-  int err;
-  // lock mutex
-  if ((err = pthread_mutex_trylock(&BUFFER_LOCK)) != 0) {
-    if (err != EBUSY) {
-      printf("WARNING could not lock mutex. Error code %d. Returning from "
-             "function.",
-             err);
-    }
-    // Do not waste time. Just try next time.
+  if (!tryLockBuffer())
     return;
-  }
 
   if (frames <= available_frames_to_fill) {
     memcpy(FRAME_BUFFER + FRAME_BUFFER_SIZE, samples,
@@ -228,13 +231,7 @@ static void fillSampleBuffer(void *buffer, unsigned int frames) {
                                 //  FRAME_BUFFER_SIZE = FRAME_BUFFER_CAPACITY;
     FRAME_BUFFER_SIZE = FRAME_BUFFER_CAPACITY;
   }
-
-  // Unlock mutex
-  if ((err = pthread_mutex_unlock(&BUFFER_LOCK)) != 0) {
-    printf("ERROR: Could not unlock mutex. Error code: %d. Quitting program.",
-           err);
-    exit(err);
-  }
+  unlockBuffer();
 }
 
 static bool initInternal(void) {
