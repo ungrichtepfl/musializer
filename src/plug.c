@@ -14,6 +14,9 @@
 
 #define FPS 60
 
+// https://pages.mtu.edu/~suits/NoteFreqCalcs.html
+#define EQUAL_TEMPERED_FACTOR 1.059463094359
+
 #define ARRAY_LENGTH(x) (sizeof(x) / sizeof(x[0]))
 
 static unsigned int CHANNELS = 2;
@@ -24,7 +27,7 @@ typedef struct Frames {
   float right;
 } Frames;
 
-#define FRAME_BUFFER_CAPACITY 800
+#define FRAME_BUFFER_CAPACITY 2048
 static Frames FRAME_BUFFER[FRAME_BUFFER_CAPACITY] = {0};
 static unsigned int FRAME_BUFFER_SIZE = 0;
 #define FRAME_BUFFER_SIZE_BYTES (FRAME_BUFFER_SIZE * sizeof(Frames))
@@ -39,7 +42,7 @@ static unsigned int FRAME_BUFFER_SIZE = 0;
 
 static pthread_mutex_t BUFFER_LOCK;
 
-#define FFT_SIZE 2048
+#define FFT_SIZE (2048 * 2 * 2)
 
 #define max(a, b) (a > b ? a : b)
 
@@ -123,6 +126,14 @@ static inline float cmaxvf(const float complex x[], const size_t n) {
   return m;
 }
 
+static inline float hannWindow(float sample, unsigned int n, unsigned int N) {
+  // Hann window: https://en.wikipedia.org/wiki/Window_function
+  return 0.5 * (1 - cosf(2.0f * M_PI * n / N)) * sample;
+}
+static inline int nextFrequencyIndex(int k) {
+  return (int)ceilf((float)k * EQUAL_TEMPERED_FACTOR);
+}
+
 // #define USE_WAVE
 
 #ifndef USE_WAVE
@@ -135,20 +146,27 @@ static void drawFrequency(void) {
   float complex frequencies[FFT_SIZE];
   assert(FFT_SIZE >= FRAME_BUFFER_SIZE && "You need to increase the FFT_SIZE");
   for (unsigned int i = 0; i < FRAME_BUFFER_SIZE; ++i) {
-    samples[i] = FRAME_BUFFER[i].left; // only take left channel
+    samples[i] = hannWindow(FRAME_BUFFER[i].left, i,
+                            FRAME_BUFFER_SIZE); // only take left channel
   }
 
   unlockBuffer();
 
+  int w = 0;
+  for (int i = 1; i < GetScreenWidth(); i = nextFrequencyIndex(i)) {
+    ++w;
+  }
+  w = GetScreenWidth() / w;
+
   // Compute FFT
   fft(samples, frequencies, FFT_SIZE);
 
-  const float f_max = cmaxvf(frequencies, FFT_SIZE);
-  STATE->max = max(STATE->max, f_max);
-  for (int i = 0; i < GetScreenWidth(); ++i) {
-    const float f = cabsf(frequencies[i]);
-    const int h = (float)GetScreenHeight() / STATE->max * f;
-    DrawRectangle(i, GetScreenHeight() - h, 1, h, BLUE);
+  for (int i = 0, k = 20; i < GetScreenWidth() && k < FFT_SIZE / 2; ++i) {
+    const float f = log10f(cabsf(frequencies[k]));
+    STATE->max = max(STATE->max, f);
+    const int h = (float)GetScreenHeight() * f / STATE->max;
+    DrawRectangle(i * w, GetScreenHeight() - h, w, h, BLUE);
+    k = nextFrequencyIndex(k);
   }
 }
 
