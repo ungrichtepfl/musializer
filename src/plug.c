@@ -27,7 +27,7 @@ typedef struct Frames {
   float right;
 } Frames;
 
-#define FRAME_BUFFER_CAPACITY 2048
+#define FRAME_BUFFER_CAPACITY 16384
 static Frames FRAME_BUFFER[FRAME_BUFFER_CAPACITY] = {0};
 static unsigned int FRAME_BUFFER_SIZE = 0;
 #define FRAME_BUFFER_SIZE_BYTES (FRAME_BUFFER_SIZE * sizeof(Frames))
@@ -42,7 +42,7 @@ static unsigned int FRAME_BUFFER_SIZE = 0;
 
 static pthread_mutex_t BUFFER_LOCK;
 
-#define FFT_SIZE (2048 * 2 * 2)
+#define FFT_SIZE (2 * FRAME_BUFFER_CAPACITY)
 
 #define max(a, b) (a > b ? a : b)
 
@@ -153,16 +153,23 @@ static void drawFrequency(void) {
   unlockBuffer();
 
   int w = 0;
-  for (int i = 1; i < GetScreenWidth(); i = nextFrequencyIndex(i)) {
+  for (int k = 20; k < FFT_SIZE / 2; k = nextFrequencyIndex(k)) {
     ++w;
   }
-  w = GetScreenWidth() / w;
+  w = w > 0 ? GetScreenWidth() / w : 1;
 
   // Compute FFT
   fft(samples, frequencies, FFT_SIZE);
 
-  for (int i = 0, k = 20; i < GetScreenWidth() && k < FFT_SIZE / 2; ++i) {
-    const float f = log10f(cabsf(frequencies[k]));
+  for (int i = 0, k = 20; i * w < GetScreenWidth() && k < FFT_SIZE / 2; ++i) {
+    float f = 0;
+    int n = 0;
+    for (int j = k; j < nextFrequencyIndex(k); ++j) {
+      f += cabsf(frequencies[j]);
+      ++n;
+    }
+    f = logf(f / n);
+
     STATE->max = max(STATE->max, f);
     const int h = (float)GetScreenHeight() * f / STATE->max;
     DrawRectangle(i * w, GetScreenHeight() - h, w, h, BLUE);
@@ -179,15 +186,21 @@ static void drawWave(void) {
   if (!lockBuffer())
     return;
 
-  for (long i = 0; i < FRAME_BUFFER_SIZE; ++i) {
+  int j = 0;
+  for (long i = FRAME_BUFFER_SIZE; i >= 0; --i) {
     const float sleft = FRAME_BUFFER[i].left;
     if (sleft > 0)
-      DrawRectangle(i, GetScreenHeight() / 2, 1, sleft * GetScreenHeight() / 2,
+      DrawRectangle(j, GetScreenHeight() / 2, 1, sleft * GetScreenHeight() / 2,
                     BLUE);
     else
       DrawRectangle(
-          i, (float)GetScreenHeight() / 2 + sleft * GetScreenHeight() / 2, 1,
+          j, (float)GetScreenHeight() / 2 + sleft * GetScreenHeight() / 2, 1,
           -sleft * GetScreenHeight() / 2, RED);
+
+    if (j > GetScreenWidth())
+      break;
+
+    ++j;
   }
 
   unlockBuffer();
