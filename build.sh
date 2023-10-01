@@ -4,7 +4,7 @@ set -xe
 
 mkdir -p ./build
 
-CFLAGS="-Wall -Wextra -Wpedantic -Og"
+CFLAGS="-Wall -Wextra -Wpedantic -Ofast"
 LFLAGS="-ldl"
 
 # shellcheck disable=SC2086

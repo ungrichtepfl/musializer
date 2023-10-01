@@ -4,7 +4,7 @@ set -xe
 
 mkdir -p ./build
 
-CFLAGS="-Wall -Wextra -Wpedantic -Og $(pkg-config --cflags raylib)"
+CFLAGS="-Wall -Wextra -Wpedantic -Ofast $(pkg-config --cflags raylib)"
 LFLAGS="$(pkg-config  --libs raylib) -lpthread -lm"
 
 # shellcheck disable=SC2086
