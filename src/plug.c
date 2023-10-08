@@ -55,6 +55,7 @@ typedef struct State {
   char musicFile[255];
   Vector2 window_pos;
   float max;
+  bool use_wave;
 } State;
 
 static State *STATE;
@@ -99,6 +100,10 @@ static const char *getFirstFile(const FilePathList files) {
 static void playMusicFromFile(void) {
   const FilePathList files = LoadDroppedFiles();
   const char *file_path = getFirstFile(files);
+  if (IsMusicReady(MUSIC)) {
+    StopMusicStream(MUSIC);
+    UnloadMusicStream(MUSIC);
+  }
   strcpy(STATE->musicFile, file_path);
   MUSIC = LoadMusicStream(file_path);
   PlayMusicStream(MUSIC);
@@ -134,9 +139,8 @@ static inline int nextFrequencyIndex(int k) {
   return (int)ceilf((float)k * EQUAL_TEMPERED_FACTOR);
 }
 
-// #define USE_WAVE
+static float SMOOTH_FREQUENCIES[FFT_SIZE] = {0};
 
-#ifndef USE_WAVE
 static void drawFrequency(void) {
 
   if (!lockBuffer())
@@ -153,7 +157,8 @@ static void drawFrequency(void) {
   unlockBuffer();
 
   int w = 0;
-  for (int k = 20; k < FFT_SIZE / 2; k = nextFrequencyIndex(k)) {
+  const int startIndex = 20;
+  for (int k = startIndex; k < FFT_SIZE / 2; k = nextFrequencyIndex(k)) {
     ++w;
   }
   w = w > 0 ? GetScreenWidth() / w : 1;
@@ -161,7 +166,8 @@ static void drawFrequency(void) {
   // Compute FFT
   fft(samples, frequencies, FFT_SIZE);
 
-  for (int i = 0, k = 20; i * w < GetScreenWidth() && k < FFT_SIZE / 2; ++i) {
+  for (int i = 0, k = startIndex; i * w < GetScreenWidth() && k < FFT_SIZE / 2;
+       ++i) {
     float f = 0;
     int n = 0;
     for (int j = k; j < nextFrequencyIndex(k); ++j) {
@@ -169,6 +175,11 @@ static void drawFrequency(void) {
       ++n;
     }
     f = logf(f / n);
+    const float smoothFactor = 8.0;
+
+    SMOOTH_FREQUENCIES[i] +=
+        (f - SMOOTH_FREQUENCIES[i]) * smoothFactor * GetFrameTime();
+    f = SMOOTH_FREQUENCIES[i];
 
     STATE->max = max(STATE->max, f);
     const int h = (float)GetScreenHeight() * f / STATE->max;
@@ -176,8 +187,6 @@ static void drawFrequency(void) {
     k = nextFrequencyIndex(k);
   }
 }
-
-#else
 
 static void drawWave(void) {
   if (FRAME_BUFFER_SIZE == 0)
@@ -188,7 +197,13 @@ static void drawWave(void) {
 
   int j = 0;
   for (long i = FRAME_BUFFER_SIZE; i >= 0; --i) {
-    const float sleft = FRAME_BUFFER[i].left;
+    float sleft = FRAME_BUFFER[i].left;
+    const float smoothFactor = 0.25;
+    SMOOTH_FREQUENCIES[j] +=
+        (sleft - SMOOTH_FREQUENCIES[j]) * smoothFactor * GetFrameTime();
+    sleft = SMOOTH_FREQUENCIES[j];
+    STATE->max = max(STATE->max, sleft);
+    sleft /= STATE->max;
     if (sleft > 0)
       DrawRectangle(j, GetScreenHeight() / 2, 1, sleft * GetScreenHeight() / 2,
                     BLUE);
@@ -206,18 +221,16 @@ static void drawWave(void) {
   unlockBuffer();
 }
 
-#endif
-
 static void drawMusic(void) {
   if (FRAME_BUFFER_SIZE == 0) {
     return; // Nothing to draw
   }
 
-#ifndef USE_WAVE
-  drawFrequency();
-#else
-  drawWave();
-#endif
+  if (STATE->use_wave) {
+    drawFrequency();
+  } else {
+    drawWave();
+  }
 }
 
 // NOTE: From raudio.c:1269 (LoadMusicStream) of raylib:
@@ -278,6 +291,8 @@ static bool initInternal(void) {
   return true;
 }
 
+#define STATE_MAX 0.01
+
 bool init(void) {
 
   if (!initInternal()) {
@@ -290,8 +305,9 @@ bool init(void) {
   STATE->finished = false;
   STATE->reload = false;
   STATE->timePlayedSeconds = 0.0f; // Time played normalized [0.0f..1.0f]
-  STATE->max = 1.0;                // Start as if they are normalized
+  STATE->max = STATE_MAX;
   STATE->window_pos = GetWindowPosition();
+  STATE->use_wave = false;
 
   return true;
 }
@@ -303,12 +319,15 @@ bool resume(State *state) {
   }
   STATE = state;
   STATE->reload = false;
-  STATE->max = 1.0; // Start as if they are normalized
+  STATE->max = STATE_MAX; // Start as if they are normalized
   if (strlen(STATE->musicFile) != 0) {
     MUSIC = LoadMusicStream(STATE->musicFile);
     PlayMusicStream(MUSIC);
     SeekMusicStream(MUSIC, STATE->timePlayedSeconds);
     AttachAudioStreamProcessor(MUSIC.stream, fillSampleBuffer);
+  }
+  for (int i = 0; i < FFT_SIZE; ++i) {
+    SMOOTH_FREQUENCIES[i] = 0;
   }
   SetWindowPosition(STATE->window_pos.x, STATE->window_pos.y);
   return true;
@@ -359,17 +378,36 @@ void update(void) {
     return;
   }
 
+  if (IsKeyPressed(KEY_W)) {
+    STATE->use_wave = !STATE->use_wave;
+    // Reset filter
+    for (int i = 0; i < FFT_SIZE; ++i) {
+      SMOOTH_FREQUENCIES[i] = 0;
+    }
+    STATE->max = STATE_MAX;
+  }
+
   if (IsFileDropped()) {
     if (IsMusicReady(MUSIC))
       // Detach if already loaded
       DetachAudioStreamProcessor(MUSIC.stream, fillSampleBuffer);
 
-    playMusicFromFile();
-
-    CHANNELS = MUSIC.stream.channels;
-
+    if (!lockBuffer()) {
+      exit(EXIT_FAILURE);
+    }
     // Reset buffer
     FRAME_BUFFER_SIZE = 0;
+    unlockBuffer();
+
+    // Reset filter
+    for (int i = 0; i < FFT_SIZE; ++i) {
+      SMOOTH_FREQUENCIES[i] = 0;
+    }
+    STATE->max = STATE_MAX;
+    STATE->timePlayedSeconds = 0.0f;
+
+    playMusicFromFile();
+    CHANNELS = MUSIC.stream.channels;
     // Attach to new music stream
     AttachAudioStreamProcessor(MUSIC.stream, fillSampleBuffer);
   }
@@ -386,10 +424,15 @@ void update(void) {
     // Pause/Resume music playing
     if (IsKeyPressed(KEY_P)) {
 
-      if (IsMusicStreamPlaying(MUSIC))
+      if (IsMusicStreamPlaying(MUSIC)) {
         PauseMusicStream(MUSIC);
-      else
+      } else {
+        // Reset filter
+        for (int i = 0; i < FFT_SIZE; ++i) {
+          SMOOTH_FREQUENCIES[i] = 0;
+        }
         ResumeMusicStream(MUSIC);
+      }
     }
 
     // Get normalized time played for current music stream
