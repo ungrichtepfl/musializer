@@ -275,7 +275,7 @@ static void drawFrequency(void) {
   // Compute FFT
   fft(samples, frequencies, FFT_SIZE);
 
-  for (int i = 0, k = startIndex; i < numFrequencyBuckets && k < FFT_SIZE / 2;
+  for (int i = 0, k = startIndex; i < numFrequencyBuckets && k < FFT_SIZE;
        ++i) {
     float f = 0;
     int n = 0;
@@ -301,7 +301,15 @@ static void drawFrequency(void) {
 
     STATE->max = max(STATE->max, f);
     const int h = (float)SCREEN_HEIGHT * f / STATE->max;
-    DrawRectangle(i * w, SCREEN_HEIGHT - h, w, h, color);
+    const int x = w / 2 + i * w;
+    const int radius = 5;
+    const int lineWidth = 3;
+    const float shrinkFactor = 0.9;
+    for (int l = 0; l < lineWidth; ++l) {
+      DrawLine(x - (l - lineWidth / 2), SCREEN_HEIGHT, x - (l - lineWidth / 2),
+               SCREEN_HEIGHT - shrinkFactor * h, color);
+    }
+    DrawCircle(x, SCREEN_HEIGHT - shrinkFactor * h, radius, color);
     k = nextFrequencyIndex(k);
   }
 }
@@ -330,7 +338,7 @@ static void drawWave(void) {
     const bool reversed_rainbow = false;
     const Color color = next_rainbow_color(j, SCREEN_WIDTH, reversed_rainbow);
     const int lineWidth = 10;
-    const float shrinkFactor = 0.8;
+    const float shrinkFactor = 0.5f;
     for (int l = 0; l < lineWidth; ++l) {
       const int diff = sleft * SCREEN_HEIGHT / 2;
       const int h = (float)SCREEN_HEIGHT / 2 - (l - (float)lineWidth / 2) +
