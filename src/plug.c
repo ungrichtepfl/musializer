@@ -27,7 +27,7 @@ typedef struct Frames {
   float right;
 } Frames;
 
-#define FRAME_BUFFER_CAPACITY 16384
+#define FRAME_BUFFER_CAPACITY (2 << 13)
 static Frames FRAME_BUFFER[FRAME_BUFFER_CAPACITY] = {0};
 static unsigned int FRAME_BUFFER_SIZE = 0;
 #define FRAME_BUFFER_SIZE_BYTES (FRAME_BUFFER_SIZE * sizeof(Frames))
@@ -41,6 +41,8 @@ static unsigned int FRAME_BUFFER_SIZE = 0;
 #define SAMPLES_TO_FRAMES(frames) (frames / CHANNELS)
 
 static pthread_mutex_t BUFFER_LOCK;
+
+#define SMOOTHED_BUFFER_SIZE SCREEN_WIDTH
 
 #define FFT_SIZE (2 * FRAME_BUFFER_CAPACITY)
 
@@ -97,20 +99,11 @@ static const char *getFirstFile(const FilePathList files) {
   return files.paths[0];
 }
 
-static void playMusicFromFile(void) {
+static void loadMusicFromFile(void) {
   const FilePathList files = LoadDroppedFiles();
   const char *file_path = getFirstFile(files);
-  if (IsMusicReady(MUSIC)) {
-    StopMusicStream(MUSIC);
-    UnloadMusicStream(MUSIC);
-  }
   strcpy(STATE->musicFile, file_path);
-  MUSIC = LoadMusicStream(file_path);
-  PlayMusicStream(MUSIC);
   UnloadDroppedFiles(files);
-  printf("Frame count: %u\n", MUSIC.frameCount);
-  printf("Sample rate: %u\n", MUSIC.stream.sampleRate);
-  printf("Frame size: %u\n", MUSIC.frameCount);
 }
 
 static inline float fmaxvf(const float x[], const size_t n) {
@@ -139,9 +132,12 @@ static inline int nextFrequencyIndex(int k) {
   return (int)ceilf((float)k * EQUAL_TEMPERED_FACTOR);
 }
 
-static float SMOOTH_FREQUENCIES[FFT_SIZE] = {0};
+static float SMOOTH_FREQUENCIES[SMOOTHED_BUFFER_SIZE] = {0};
 
 static void drawFrequency(void) {
+
+  if (FRAME_BUFFER_SIZE == 0)
+    return; // Nothing to draw
 
   if (!lockBuffer())
     return;
@@ -174,11 +170,16 @@ static void drawFrequency(void) {
       f += cabsf(frequencies[j]);
       ++n;
     }
+
     f = logf(f / n);
-    const float smoothFactor = 8.0;
+    const float smoothFactor = 10.0f;
 
     SMOOTH_FREQUENCIES[i] +=
         (f - SMOOTH_FREQUENCIES[i]) * smoothFactor * GetFrameTime();
+
+    if (SMOOTH_FREQUENCIES[i] < 0.0f)
+      SMOOTH_FREQUENCIES[i] = 0.0f;
+
     f = SMOOTH_FREQUENCIES[i];
 
     STATE->max = max(STATE->max, f);
@@ -197,11 +198,15 @@ static void drawWave(void) {
 
   int j = 0;
   for (long i = FRAME_BUFFER_SIZE; i >= 0; --i) {
+    if (j >= GetScreenWidth())
+      break;
     float sleft = FRAME_BUFFER[i].left;
-    const float smoothFactor = 0.25;
+    const float smoothFactor = 0.75f;
     SMOOTH_FREQUENCIES[j] +=
         (sleft - SMOOTH_FREQUENCIES[j]) * smoothFactor * GetFrameTime();
+
     sleft = SMOOTH_FREQUENCIES[j];
+
     STATE->max = max(STATE->max, sleft);
     sleft /= STATE->max;
     if (sleft > 0)
@@ -211,10 +216,6 @@ static void drawWave(void) {
       DrawRectangle(
           j, (float)GetScreenHeight() / 2 + sleft * GetScreenHeight() / 2, 1,
           -sleft * GetScreenHeight() / 2, RED);
-
-    if (j > GetScreenWidth())
-      break;
-
     ++j;
   }
 
@@ -304,7 +305,7 @@ bool init(void) {
   // No need to initialize MUSIC otherwise it segfaults
   STATE->finished = false;
   STATE->reload = false;
-  STATE->timePlayedSeconds = 0.0f; // Time played normalized [0.0f..1.0f]
+  STATE->timePlayedSeconds = 0.0f;
   STATE->max = STATE_MAX;
   STATE->window_pos = GetWindowPosition();
   STATE->use_wave = false;
@@ -312,23 +313,40 @@ bool init(void) {
   return true;
 }
 
-bool resume(State *state) {
-
-  if (!initInternal()) {
-    return false;
-  }
-  STATE = state;
-  STATE->reload = false;
+static void startMusic(void) {
   STATE->max = STATE_MAX; // Start as if they are normalized
+
+  if (!lockBuffer()) {
+    exit(EXIT_FAILURE); // TODO: pass error to state
+  }
+  FRAME_BUFFER_SIZE = 0;
+  unlockBuffer();
+
   if (strlen(STATE->musicFile) != 0) {
     MUSIC = LoadMusicStream(STATE->musicFile);
+    CHANNELS = MUSIC.stream.channels;
+    printf("Frame count: %u\n", MUSIC.frameCount);
+    printf("Sample rate: %u\n", MUSIC.stream.sampleRate);
+    printf("Frame size: %u\n", MUSIC.frameCount);
     PlayMusicStream(MUSIC);
     SeekMusicStream(MUSIC, STATE->timePlayedSeconds);
     AttachAudioStreamProcessor(MUSIC.stream, fillSampleBuffer);
   }
-  for (int i = 0; i < FFT_SIZE; ++i) {
-    SMOOTH_FREQUENCIES[i] = 0;
+  // Reset filter
+  for (int i = 0; i < SMOOTHED_BUFFER_SIZE; ++i) {
+    SMOOTH_FREQUENCIES[i] = 0.0f;
   }
+}
+
+bool resume(State *state) {
+  if (!initInternal()) {
+    return false;
+  }
+
+  STATE = state;
+
+  STATE->reload = false;
+  startMusic();
   SetWindowPosition(STATE->window_pos.x, STATE->window_pos.y);
   return true;
 }
@@ -337,12 +355,15 @@ State *getState(void) { return STATE; }
 
 bool finished(void) { return STATE->finished; }
 
-static void terminateInternal(void) {
-
+static void stopMusic(void) {
   if (IsMusicReady(MUSIC)) {
     DetachAudioStreamProcessor(MUSIC.stream, fillSampleBuffer);
     UnloadMusicStream(MUSIC);
   }
+}
+
+static void terminateInternal(void) {
+  stopMusic();
   CloseAudioDevice();
   CloseWindow();
   pthread_mutex_destroy(&BUFFER_LOCK);
@@ -381,35 +402,17 @@ void update(void) {
   if (IsKeyPressed(KEY_W)) {
     STATE->use_wave = !STATE->use_wave;
     // Reset filter
-    for (int i = 0; i < FFT_SIZE; ++i) {
-      SMOOTH_FREQUENCIES[i] = 0;
+    for (int i = 0; i < SMOOTHED_BUFFER_SIZE; ++i) {
+      SMOOTH_FREQUENCIES[i] = 0.0f;
     }
     STATE->max = STATE_MAX;
   }
 
   if (IsFileDropped()) {
-    if (IsMusicReady(MUSIC))
-      // Detach if already loaded
-      DetachAudioStreamProcessor(MUSIC.stream, fillSampleBuffer);
-
-    if (!lockBuffer()) {
-      exit(EXIT_FAILURE);
-    }
-    // Reset buffer
-    FRAME_BUFFER_SIZE = 0;
-    unlockBuffer();
-
-    // Reset filter
-    for (int i = 0; i < FFT_SIZE; ++i) {
-      SMOOTH_FREQUENCIES[i] = 0;
-    }
-    STATE->max = STATE_MAX;
+    stopMusic();
+    loadMusicFromFile();
     STATE->timePlayedSeconds = 0.0f;
-
-    playMusicFromFile();
-    CHANNELS = MUSIC.stream.channels;
-    // Attach to new music stream
-    AttachAudioStreamProcessor(MUSIC.stream, fillSampleBuffer);
+    startMusic();
   }
 
   if (IsMusicReady(MUSIC)) {
@@ -428,9 +431,10 @@ void update(void) {
         PauseMusicStream(MUSIC);
       } else {
         // Reset filter
-        for (int i = 0; i < FFT_SIZE; ++i) {
-          SMOOTH_FREQUENCIES[i] = 0;
+        for (int i = 0; i < SMOOTHED_BUFFER_SIZE; ++i) {
+          SMOOTH_FREQUENCIES[i] = 0.0f;
         }
+        STATE->max = STATE_MAX;
         ResumeMusicStream(MUSIC);
       }
     }
