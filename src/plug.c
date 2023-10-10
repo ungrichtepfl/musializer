@@ -62,6 +62,70 @@ typedef struct State {
 
 static State *STATE;
 
+typedef struct LinearColor_s {
+  float r;
+  float g;
+  float b;
+  float a;
+} LinearColor;
+
+static inline float color_u8_to_f32(const unsigned char x) { return x / 255.0; }
+
+static inline unsigned char color_f32_to_u8(const float x) { return x * 255.0; }
+
+static inline float to_linear(const unsigned char x) {
+  const float f = color_u8_to_f32(x);
+  if (f <= 0.04045)
+    return f / 12.92;
+  else
+    return pow((f + 0.055) / 1.055, 2.4);
+}
+
+static inline LinearColor srgb_to_linear(const Color color) {
+  return (LinearColor){
+      .r = to_linear(color.r),
+      .g = to_linear(color.g),
+      .b = to_linear(color.b),
+      .a = color_u8_to_f32(color.a),
+  };
+}
+
+static inline unsigned char to_srgb(const float x) {
+  const float f =
+      (x <= 0.0031308) ? x * 12.92 : 1.055 * pow(x, 1.0 / 2.4) - 0.055;
+  return color_f32_to_u8(f);
+}
+
+static LinearColor lerp_color(const LinearColor color1,
+                              const LinearColor color2, const float t) {
+  const float vec1[] = {color1.r, color1.g, color1.b, color1.a};
+  const float vec2[] = {color2.r, color2.g, color2.b, color2.a};
+  float res[] = {0, 0, 0, 0};
+  for (int i = 0; i < 4; i++)
+    res[i] = vec1[i] + (vec2[i] - vec1[i]) * t;
+  return (LinearColor){
+      .r = res[0],
+      .g = res[1],
+      .b = res[2],
+      .a = res[3],
+  };
+}
+
+static inline Color linear_to_srgb(const LinearColor color) {
+  return (Color){.r = to_srgb(color.r),
+                 .g = to_srgb(color.g),
+                 .b = to_srgb(color.b),
+                 .a = color_f32_to_u8(color.a)};
+}
+
+static Color lerp_color_gamma_corrected(const Color color1, const Color color2,
+                                        const float t) {
+  const LinearColor c1 = srgb_to_linear(color1);
+  const LinearColor c2 = srgb_to_linear(color2);
+  const LinearColor c = lerp_color(c1, c2, t);
+  return linear_to_srgb(c);
+}
+
 static bool lockBuffer(void) {
   int err;
   // Locking mutex
@@ -152,17 +216,19 @@ static void drawFrequency(void) {
 
   unlockBuffer();
 
-  int w = 0;
+  int numFrequencyBuckets = 0;
   const int startIndex = 20;
   for (int k = startIndex; k < FFT_SIZE / 2; k = nextFrequencyIndex(k)) {
-    ++w;
+    ++numFrequencyBuckets;
   }
-  w = w > 0 ? GetScreenWidth() / w : 1;
+
+  const int w =
+      numFrequencyBuckets > 0 ? GetScreenWidth() / numFrequencyBuckets : 1;
 
   // Compute FFT
   fft(samples, frequencies, FFT_SIZE);
 
-  for (int i = 0, k = startIndex; i * w < GetScreenWidth() && k < FFT_SIZE / 2;
+  for (int i = 0, k = startIndex; i < numFrequencyBuckets && k < FFT_SIZE / 2;
        ++i) {
     float f = 0;
     int n = 0;
@@ -182,9 +248,13 @@ static void drawFrequency(void) {
 
     f = SMOOTH_FREQUENCIES[i];
 
+    const float t = (float)i / numFrequencyBuckets;
+
+    const Color color = lerp_color_gamma_corrected(BLUE, RED, t);
+
     STATE->max = max(STATE->max, f);
     const int h = (float)GetScreenHeight() * f / STATE->max;
-    DrawRectangle(i * w, GetScreenHeight() - h, w, h, BLUE);
+    DrawRectangle(i * w, GetScreenHeight() - h, w, h, color);
     k = nextFrequencyIndex(k);
   }
 }
