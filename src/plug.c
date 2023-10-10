@@ -126,6 +126,53 @@ static Color lerp_color_gamma_corrected(const Color color1, const Color color2,
   return linear_to_srgb(c);
 }
 
+static Color next_rainbow_color(int i, int n, bool reversed) {
+  // RED
+  // ORANGE
+  // YELLOW
+  // GREEN
+  // BLUE
+  // INDIGO
+  // VIOLET
+  if (reversed)
+    i = n - 1 - i;
+
+  const int buckets = n / 5;
+  int start;
+  int stop;
+  Color startColor;
+  Color stopColor;
+  if (i < buckets) {
+    start = 0;
+    stop = buckets;
+    startColor = RED;
+    stopColor = ORANGE;
+  } else if (i < 2 * buckets) {
+    start = buckets;
+    stop = 2 * buckets;
+    startColor = ORANGE;
+    stopColor = YELLOW;
+  } else if (i < 3 * buckets) {
+    start = 2 * buckets;
+    stop = 3 * buckets;
+    startColor = YELLOW;
+    stopColor = GREEN;
+  } else if (i < 4 * buckets) {
+    start = 3 * buckets;
+    stop = 4 * buckets;
+    startColor = GREEN;
+    stopColor = BLUE;
+  } else {
+    start = 4 * buckets;
+    stop = n;
+    startColor = BLUE;
+    stopColor = PURPLE;
+  }
+
+  const float t = (float)(i - start) / (stop - start);
+  return lerp_color_gamma_corrected(startColor, stopColor, t);
+}
+
 static bool lockBuffer(void) {
   int err;
   // Locking mutex
@@ -223,7 +270,7 @@ static void drawFrequency(void) {
   }
 
   const int w =
-      numFrequencyBuckets > 0 ? GetScreenWidth() / numFrequencyBuckets : 1;
+      numFrequencyBuckets > 0 ? SCREEN_WIDTH / numFrequencyBuckets : 1;
 
   // Compute FFT
   fft(samples, frequencies, FFT_SIZE);
@@ -248,13 +295,13 @@ static void drawFrequency(void) {
 
     f = SMOOTH_FREQUENCIES[i];
 
-    const float t = (float)i / numFrequencyBuckets;
-
-    const Color color = lerp_color_gamma_corrected(BLUE, RED, t);
+    const bool reversed_rainbow = true;
+    const Color color =
+        next_rainbow_color(i, numFrequencyBuckets, reversed_rainbow);
 
     STATE->max = max(STATE->max, f);
-    const int h = (float)GetScreenHeight() * f / STATE->max;
-    DrawRectangle(i * w, GetScreenHeight() - h, w, h, color);
+    const int h = (float)SCREEN_HEIGHT * f / STATE->max;
+    DrawRectangle(i * w, SCREEN_HEIGHT - h, w, h, color);
     k = nextFrequencyIndex(k);
   }
 }
@@ -268,10 +315,10 @@ static void drawWave(void) {
 
   int j = 0;
   for (long i = FRAME_BUFFER_SIZE; i >= 0; --i) {
-    if (j >= GetScreenWidth())
+    if (j >= SCREEN_WIDTH)
       break;
     float sleft = FRAME_BUFFER[i].left;
-    const float smoothFactor = 0.75f;
+    const float smoothFactor = 1.5f;
     SMOOTH_FREQUENCIES[j] +=
         (sleft - SMOOTH_FREQUENCIES[j]) * smoothFactor * GetFrameTime();
 
@@ -279,13 +326,18 @@ static void drawWave(void) {
 
     STATE->max = max(STATE->max, sleft);
     sleft /= STATE->max;
-    if (sleft > 0)
-      DrawRectangle(j, GetScreenHeight() / 2, 1, sleft * GetScreenHeight() / 2,
-                    BLUE);
-    else
-      DrawRectangle(
-          j, (float)GetScreenHeight() / 2 + sleft * GetScreenHeight() / 2, 1,
-          -sleft * GetScreenHeight() / 2, RED);
+
+    const bool reversed_rainbow = false;
+    const Color color = next_rainbow_color(j, SCREEN_WIDTH, reversed_rainbow);
+    const int lineWidth = 10;
+    const float shrinkFactor = 0.8;
+    for (int l = 0; l < lineWidth; ++l) {
+      const int diff = sleft * SCREEN_HEIGHT / 2;
+      const int h = (float)SCREEN_HEIGHT / 2 - (l - (float)lineWidth / 2) +
+                    shrinkFactor * diff;
+      DrawPixel(j, h, color);
+    }
+
     ++j;
   }
 
