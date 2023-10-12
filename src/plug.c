@@ -296,7 +296,7 @@ static void drawFrequency(void) {
   fft(samples, frequencies, FFT_SIZE);
 
   for (int i = 0, k = startIndex; i < numFrequencyBuckets && k < FFT_SIZE;
-       ++i) {
+       ++i, k = nextFrequencyIndex(k)) {
     float f = 0;
     int n = 0;
     for (int j = k; j < nextFrequencyIndex(k); ++j) {
@@ -330,7 +330,6 @@ static void drawFrequency(void) {
                SCREEN_HEIGHT - shrinkFactor * h, color);
     }
     DrawCircle(x, SCREEN_HEIGHT - shrinkFactor * h, radius, color);
-    k = nextFrequencyIndex(k);
   }
 }
 
@@ -341,10 +340,9 @@ static void drawWave(void) {
   if (!lockBuffer())
     return;
 
-  int j = 0;
-  for (long i = FRAME_BUFFER_SIZE; i >= 0; --i) {
-    if (j >= SCREEN_WIDTH)
-      break;
+  for (long i = FRAME_BUFFER_SIZE, j = 0; i >= 0 && j < SCREEN_WIDTH;
+       --i, ++j) {
+
     float sleft = FRAME_BUFFER[i].left;
     const float smoothFactor = 1.5f;
     SMOOTH_FREQUENCIES[j] +=
@@ -365,8 +363,6 @@ static void drawWave(void) {
                     shrinkFactor * diff;
       DrawPixel(j, h, color);
     }
-
-    ++j;
   }
 
   unlockBuffer();
