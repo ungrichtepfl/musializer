@@ -48,20 +48,52 @@ static pthread_mutex_t BUFFER_LOCK;
 
 #define max(a, b) (a > b ? a : b)
 
+typedef struct MusicFiles {
+  size_t count;
+  size_t currentlyPlayed;
+  char **paths;
+} MusicFiles;
+
 static Music MUSIC;
 
 typedef struct State {
   bool finished;
   bool reload;
   float timePlayedSeconds;
-  char musicFile[255];
-  Vector2 window_pos;
-  float max;
-  bool use_wave;
+  MusicFiles musicFiles;
+  Vector2 windowPosition;
+  float maxAmplitude;
+  bool useWave;
 } State;
 
 static State *STATE;
 
+static void unloadMusicFiles(void) {
+  if (STATE->musicFiles.count > 0) {
+    for (size_t i = 0; i < STATE->musicFiles.count; ++i)
+      free(STATE->musicFiles.paths[i]);
+
+    free(STATE->musicFiles.paths);
+    STATE->musicFiles.count = 0;
+  }
+}
+
+static void loadMusicFiles() {
+  FilePathList droppedFiles = LoadDroppedFiles();
+  unloadMusicFiles();
+  STATE->musicFiles.count = droppedFiles.count;
+  STATE->musicFiles.currentlyPlayed = 0;
+
+  printf("Music files in the queue:\n");
+  STATE->musicFiles.paths = malloc(sizeof(char *) * droppedFiles.count);
+  for (unsigned int i = 0; i < droppedFiles.count; ++i) {
+    STATE->musicFiles.paths[i] =
+        malloc(strlen(droppedFiles.paths[i]) + 1); // + 1 for null terminator
+    strcpy(STATE->musicFiles.paths[i], droppedFiles.paths[i]);
+    printf("%s\n", STATE->musicFiles.paths[i]);
+  }
+  UnloadDroppedFiles(droppedFiles);
+}
 typedef struct LinearColor_s {
   float r;
   float g;
@@ -205,18 +237,6 @@ static void unlockBuffer(void) {
   }
 }
 
-static const char *getFirstFile(const FilePathList files) {
-  assert(files.count > 0 && "No files found");
-  return files.paths[0];
-}
-
-static void loadMusicFromFile(void) {
-  const FilePathList files = LoadDroppedFiles();
-  const char *file_path = getFirstFile(files);
-  strcpy(STATE->musicFile, file_path);
-  UnloadDroppedFiles(files);
-}
-
 static inline float fmaxvf(const float x[], const size_t n) {
   assert(n > 0 && "Empty vector");
   float m = x[0];
@@ -299,8 +319,8 @@ static void drawFrequency(void) {
     const Color color =
         next_rainbow_color(i, numFrequencyBuckets, reversed_rainbow);
 
-    STATE->max = max(STATE->max, f);
-    const int h = (float)SCREEN_HEIGHT * f / STATE->max;
+    STATE->maxAmplitude = max(STATE->maxAmplitude, f);
+    const int h = (float)SCREEN_HEIGHT * f / STATE->maxAmplitude;
     const int x = w / 2 + i * w;
     const int radius = 5;
     const int lineWidth = 3;
@@ -332,8 +352,8 @@ static void drawWave(void) {
 
     sleft = SMOOTH_FREQUENCIES[j];
 
-    STATE->max = max(STATE->max, sleft);
-    sleft /= STATE->max;
+    STATE->maxAmplitude = max(STATE->maxAmplitude, sleft);
+    sleft /= STATE->maxAmplitude;
 
     const bool reversed_rainbow = false;
     const Color color = next_rainbow_color(j, SCREEN_WIDTH, reversed_rainbow);
@@ -357,7 +377,7 @@ static void drawMusic(void) {
     return; // Nothing to draw
   }
 
-  if (STATE->use_wave) {
+  if (STATE->useWave) {
     drawFrequency();
   } else {
     drawWave();
@@ -436,15 +456,16 @@ bool init(void) {
   STATE->finished = false;
   STATE->reload = false;
   STATE->timePlayedSeconds = 0.0f;
-  STATE->max = STATE_MAX;
-  STATE->window_pos = GetWindowPosition();
-  STATE->use_wave = false;
+  STATE->maxAmplitude = STATE_MAX;
+  STATE->windowPosition = GetWindowPosition();
+  STATE->useWave = true;
+  STATE->musicFiles = (MusicFiles){0, 0, NULL};
 
   return true;
 }
 
 static void startMusic(void) {
-  STATE->max = STATE_MAX; // Start as if they are normalized
+  STATE->maxAmplitude = STATE_MAX; // Start as if they are normalized
 
   if (!lockBuffer()) {
     exit(EXIT_FAILURE); // TODO: pass error to state
@@ -452,8 +473,9 @@ static void startMusic(void) {
   FRAME_BUFFER_SIZE = 0;
   unlockBuffer();
 
-  if (strlen(STATE->musicFile) != 0) {
-    MUSIC = LoadMusicStream(STATE->musicFile);
+  if (STATE->musicFiles.count > 0) {
+    MUSIC = LoadMusicStream(
+        STATE->musicFiles.paths[STATE->musicFiles.currentlyPlayed]);
     CHANNELS = MUSIC.stream.channels;
     printf("Frame count: %u\n", MUSIC.frameCount);
     printf("Sample rate: %u\n", MUSIC.stream.sampleRate);
@@ -477,7 +499,7 @@ bool resume(State *state) {
 
   STATE->reload = false;
   startMusic();
-  SetWindowPosition(STATE->window_pos.x, STATE->window_pos.y);
+  SetWindowPosition(STATE->windowPosition.x, STATE->windowPosition.y);
   return true;
 }
 
@@ -502,6 +524,7 @@ static void terminateInternal(void) {
 void terminate(void) {
   terminateInternal();
 
+  unloadMusicFiles();
   free(STATE);
 }
 
@@ -521,7 +544,7 @@ void update(void) {
   // Update
   //----------------------------------------------------------------------------------
 
-  STATE->window_pos = GetWindowPosition();
+  STATE->windowPosition = GetWindowPosition();
 
   if (IsKeyPressed(KEY_R)) {
     // Reload plugins
@@ -530,17 +553,17 @@ void update(void) {
   }
 
   if (IsKeyPressed(KEY_W)) {
-    STATE->use_wave = !STATE->use_wave;
+    STATE->useWave = !STATE->useWave;
     // Reset filter
     for (int i = 0; i < SMOOTHED_BUFFER_SIZE; ++i) {
       SMOOTH_FREQUENCIES[i] = 0.0f;
     }
-    STATE->max = STATE_MAX;
+    STATE->maxAmplitude = STATE_MAX;
   }
 
   if (IsFileDropped()) {
     stopMusic();
-    loadMusicFromFile();
+    loadMusicFiles();
     STATE->timePlayedSeconds = 0.0f;
     startMusic();
   }
@@ -564,13 +587,20 @@ void update(void) {
         for (int i = 0; i < SMOOTHED_BUFFER_SIZE; ++i) {
           SMOOTH_FREQUENCIES[i] = 0.0f;
         }
-        STATE->max = STATE_MAX;
+        STATE->maxAmplitude = STATE_MAX;
         ResumeMusicStream(MUSIC);
       }
     }
 
-    // Get normalized time played for current music stream
     STATE->timePlayedSeconds = GetMusicTimePlayed(MUSIC);
+    if (STATE->timePlayedSeconds >=
+        GetMusicTimeLength(MUSIC) - 0.1f) { // Otherwise it may repeat
+      STATE->timePlayedSeconds = 0;
+      if (++STATE->musicFiles.currentlyPlayed >= STATE->musicFiles.count)
+        STATE->musicFiles.currentlyPlayed = 0;
+      stopMusic();
+      startMusic();
+    }
   }
 
   //----------------------------------------------------------------------------------
@@ -582,17 +612,7 @@ void update(void) {
   ClearBackground(BLACK);
 
   if (IsMusicReady(MUSIC)) {
-
     drawMusic();
-
-    // DrawText("MUSIC SHOULD BE PLAYING!", 255, 150, 20, WHITE);
-    //
-    // DrawRectangle(200, 200, 400, 12, WHITE);
-    // DrawRectangle(200, 200, (int)(timePlayed * 400.0f), 12, RED);
-    // DrawRectangleLines(200, 200, 400, 12, LIGHTGRAY);
-    //
-    // DrawText("PRESS SPACE TO RESTART MUSIC", 215, 250, 20, WHITE);
-    // DrawText("PRESS P TO PAUSE/RESUME MUSIC", 208, 280, 20, WHITE);
   } else {
     DrawText("DRAG AND DROP A MUSIC FILE", 235, 200, 20, WHITE);
   }
