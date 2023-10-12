@@ -378,9 +378,9 @@ static void drawMusic(void) {
   }
 
   if (STATE->useWave) {
-    drawFrequency();
-  } else {
     drawWave();
+  } else {
+    drawFrequency();
   }
 }
 
@@ -458,7 +458,7 @@ bool init(void) {
   STATE->timePlayedSeconds = 0.0f;
   STATE->maxAmplitude = STATE_MAX;
   STATE->windowPosition = GetWindowPosition();
-  STATE->useWave = true;
+  STATE->useWave = false;
   STATE->musicFiles = (MusicFiles){0, 0, NULL};
 
   return true;
