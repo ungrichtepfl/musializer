@@ -42,9 +42,11 @@ static unsigned int FRAME_BUFFER_SIZE = 0;
 
 static pthread_mutex_t BUFFER_LOCK;
 
-#define SMOOTHED_BUFFER_SIZE SCREEN_WIDTH
+#define SMOOTHED_AMPLITUDES_SIZE SCREEN_WIDTH
 
 #define FFT_SIZE (2 * FRAME_BUFFER_CAPACITY)
+
+#define DEFAULT_MAX_AMPLITUDE 0.01
 
 #define max(a, b) (a > b ? a : b)
 
@@ -129,8 +131,8 @@ static inline unsigned char to_srgb(const float x) {
   return color_f32_to_u8(f);
 }
 
-static LinearColor lerp_color(const LinearColor color1,
-                              const LinearColor color2, const float t) {
+static LinearColor lerpColor(const LinearColor color1, const LinearColor color2,
+                             const float t) {
   const float vec1[] = {color1.r, color1.g, color1.b, color1.a};
   const float vec2[] = {color2.r, color2.g, color2.b, color2.a};
   float res[] = {0, 0, 0, 0};
@@ -151,22 +153,16 @@ static inline Color linear_to_srgb(const LinearColor color) {
                  .a = color_f32_to_u8(color.a)};
 }
 
-static Color lerp_color_gamma_corrected(const Color color1, const Color color2,
-                                        const float t) {
+static Color lerpColorGammaCorrected(const Color color1, const Color color2,
+                                     const float t) {
   const LinearColor c1 = srgb_to_linear(color1);
   const LinearColor c2 = srgb_to_linear(color2);
-  const LinearColor c = lerp_color(c1, c2, t);
+  const LinearColor c = lerpColor(c1, c2, t);
   return linear_to_srgb(c);
 }
 
-static Color next_rainbow_color(int i, int n, bool reversed) {
-  // RED
-  // ORANGE
-  // YELLOW
-  // GREEN
-  // BLUE
-  // INDIGO
-  // VIOLET
+static Color nextRainbowColor(int i, int n, bool reversed) {
+
   if (reversed)
     i = n - 1 - i;
 
@@ -203,7 +199,7 @@ static Color next_rainbow_color(int i, int n, bool reversed) {
   }
 
   const float t = (float)(i - start) / (stop - start);
-  return lerp_color_gamma_corrected(startColor, stopColor, t);
+  return lerpColorGammaCorrected(startColor, stopColor, t);
 }
 
 static bool lockBuffer(void) {
@@ -265,7 +261,7 @@ static inline int nextFrequencyIndex(int k) {
   return (int)ceilf((float)k * EQUAL_TEMPERED_FACTOR);
 }
 
-static float SMOOTH_FREQUENCIES[SMOOTHED_BUFFER_SIZE] = {0};
+static float SMOOTHED_AMPLITUDES[SMOOTHED_AMPLITUDES_SIZE] = {0};
 
 static void drawFrequency(void) {
 
@@ -285,50 +281,54 @@ static void drawFrequency(void) {
 
   unlockBuffer();
 
-  int numFrequencyBuckets = 0;
-  const int startIndex = 20;
-  for (int k = startIndex; k < FFT_SIZE / 2; k = nextFrequencyIndex(k)) {
-    ++numFrequencyBuckets;
-  }
-
-  const int w =
-      numFrequencyBuckets > 0 ? SCREEN_WIDTH / numFrequencyBuckets : 1;
-
   // Compute FFT
   fft(samples, frequencies, FFT_SIZE);
 
-  for (int i = 0, k = startIndex; i < numFrequencyBuckets && k < FFT_SIZE;
-       ++i, k = nextFrequencyIndex(k)) {
+  int numFrequencyBuckets = 0;
+  const int startIndex = 20;
+  for (int k = startIndex, i = 0;
+       k < FFT_SIZE / 2 && i < SMOOTHED_AMPLITUDES_SIZE;
+       k = nextFrequencyIndex(k), ++i) {
+    ++numFrequencyBuckets;
     float f = 0;
     int n = 0;
     for (int j = k; j < nextFrequencyIndex(k); ++j) {
       f += cabsf(frequencies[j]);
       ++n;
     }
-    if (f > 0.0f)
+    if (f > 0.0f && n != 0)
       f = logf(f / n);
+
     const float smoothFactor = 10.0f;
+    SMOOTHED_AMPLITUDES[i] +=
+        (f - SMOOTHED_AMPLITUDES[i]) * smoothFactor * GetFrameTime();
 
-    SMOOTH_FREQUENCIES[i] +=
-        (f - SMOOTH_FREQUENCIES[i]) * smoothFactor * GetFrameTime();
+    if (SMOOTHED_AMPLITUDES[i] < 0.0f)
+      SMOOTHED_AMPLITUDES[i] = 0.0f;
 
-    if (SMOOTH_FREQUENCIES[i] < 0.0f)
-      SMOOTH_FREQUENCIES[i] = 0.0f;
+    STATE->maxAmplitude = max(STATE->maxAmplitude, SMOOTHED_AMPLITUDES[i]);
+  }
 
-    f = SMOOTH_FREQUENCIES[i];
+  const int w =
+      numFrequencyBuckets > 0 ? SCREEN_WIDTH / numFrequencyBuckets : 1;
+
+  for (int i = 0; i < numFrequencyBuckets; ++i) {
+    const float f = SMOOTHED_AMPLITUDES[i];
 
     const bool reversed_rainbow = true;
-    Color color = next_rainbow_color(i, numFrequencyBuckets, reversed_rainbow);
+    Color color = nextRainbowColor(i, numFrequencyBuckets, reversed_rainbow);
 
-    STATE->maxAmplitude = max(STATE->maxAmplitude, f);
     const float t = f / STATE->maxAmplitude;
     const int h = (float)SCREEN_HEIGHT * t;
     const int x = w / 2 + i * w;
+    const float smallestLineWidth = 2.5f;
+    const float lineWidth = (4.0f - smallestLineWidth) * t + smallestLineWidth;
+    const float radius = t < 0.0001 ? 0.0f : (7.0f - lineWidth) * t + lineWidth;
+
+    const float smallestAlpha = 0.1f;
     const float t2 = sinf(t * M_PI / 2.0f);
-    const float aStart = 100.0f;
-    color.a = (255.0f - aStart) * t2 + aStart;
-    const float lineWidth = 2.3f * t2 + 1.0f;
-    const float radius = t2 < 0.0001 ? 0.0f : 5.5f * t2 + 1.0f;
+    color = Fade(color, (1.0f - smallestAlpha) * t2 + smallestAlpha);
+
     const float shrinkFactor = 0.9f;
     DrawLineEx((Vector2){x, SCREEN_HEIGHT},
                (Vector2){x, SCREEN_HEIGHT - shrinkFactor * h + radius - 1},
@@ -347,20 +347,21 @@ static void drawWave(void) {
   const long dx = 2;
   int previous_h = -1;
   for (long i = FRAME_BUFFER_SIZE - 1, j = 0, x = SCREEN_WIDTH - dx;
-       i >= 0 && j < SMOOTHED_BUFFER_SIZE && x >= 0; i -= dx, ++j, x -= dx) {
+       i >= 0 && j < SMOOTHED_AMPLITUDES_SIZE && x >= 0;
+       i -= dx, ++j, x -= dx) {
 
     float sleft = FRAME_BUFFER[i].left;
     const float smoothFactor = 1.2f;
-    SMOOTH_FREQUENCIES[j] +=
-        (sleft - SMOOTH_FREQUENCIES[j]) * smoothFactor * GetFrameTime();
+    SMOOTHED_AMPLITUDES[j] +=
+        (sleft - SMOOTHED_AMPLITUDES[j]) * smoothFactor * GetFrameTime();
 
-    sleft = SMOOTH_FREQUENCIES[j];
+    sleft = SMOOTHED_AMPLITUDES[j];
 
     STATE->maxAmplitude = max(STATE->maxAmplitude, sleft);
     sleft /= STATE->maxAmplitude;
 
     const bool reversed_rainbow = false;
-    const Color color = next_rainbow_color(x, SCREEN_WIDTH, reversed_rainbow);
+    const Color color = nextRainbowColor(x, SCREEN_WIDTH, reversed_rainbow);
     const float lineWidth = 2.7f;
     const float shrinkFactor = 0.5f;
     const int diff = sleft * SCREEN_HEIGHT / 2;
@@ -448,8 +449,6 @@ static bool initInternal(void) {
   return true;
 }
 
-#define STATE_MAX 0.01
-
 bool init(void) {
 
   if (!initInternal()) {
@@ -462,7 +461,7 @@ bool init(void) {
   STATE->finished = false;
   STATE->reload = false;
   STATE->timePlayedSeconds = 0.0f;
-  STATE->maxAmplitude = STATE_MAX;
+  STATE->maxAmplitude = DEFAULT_MAX_AMPLITUDE;
   STATE->windowPosition = GetWindowPosition();
   STATE->useWave = false;
   STATE->musicFiles = (MusicFiles){0, 0, NULL};
@@ -471,7 +470,8 @@ bool init(void) {
 }
 
 static void startMusic(void) {
-  STATE->maxAmplitude = STATE_MAX; // Start as if they are normalized
+  STATE->maxAmplitude =
+      DEFAULT_MAX_AMPLITUDE; // Start as if they are normalized
 
   if (!lockBuffer()) {
     exit(EXIT_FAILURE); // TODO: pass error to state
@@ -491,8 +491,8 @@ static void startMusic(void) {
     AttachAudioStreamProcessor(MUSIC.stream, fillSampleBuffer);
   }
   // Reset filter
-  for (int i = 0; i < SMOOTHED_BUFFER_SIZE; ++i) {
-    SMOOTH_FREQUENCIES[i] = 0.0f;
+  for (int i = 0; i < SMOOTHED_AMPLITUDES_SIZE; ++i) {
+    SMOOTHED_AMPLITUDES[i] = 0.0f;
   }
 }
 
@@ -561,10 +561,10 @@ void update(void) {
   if (IsKeyPressed(KEY_W)) {
     STATE->useWave = !STATE->useWave;
     // Reset filter
-    for (int i = 0; i < SMOOTHED_BUFFER_SIZE; ++i) {
-      SMOOTH_FREQUENCIES[i] = 0.0f;
+    for (int i = 0; i < SMOOTHED_AMPLITUDES_SIZE; ++i) {
+      SMOOTHED_AMPLITUDES[i] = 0.0f;
     }
-    STATE->maxAmplitude = STATE_MAX;
+    STATE->maxAmplitude = DEFAULT_MAX_AMPLITUDE;
   }
 
   if (IsFileDropped()) {
@@ -590,10 +590,10 @@ void update(void) {
         PauseMusicStream(MUSIC);
       } else {
         // Reset filter
-        for (int i = 0; i < SMOOTHED_BUFFER_SIZE; ++i) {
-          SMOOTH_FREQUENCIES[i] = 0.0f;
+        for (int i = 0; i < SMOOTHED_AMPLITUDES_SIZE; ++i) {
+          SMOOTHED_AMPLITUDES[i] = 0.0f;
         }
-        STATE->maxAmplitude = STATE_MAX;
+        STATE->maxAmplitude = DEFAULT_MAX_AMPLITUDE;
         ResumeMusicStream(MUSIC);
       }
     }
