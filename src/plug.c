@@ -303,8 +303,8 @@ static void drawFrequency(void) {
       f += cabsf(frequencies[j]);
       ++n;
     }
-
-    f = logf(f / n);
+    if (f > 0.0f)
+      f = logf(f / n);
     const float smoothFactor = 10.0f;
 
     SMOOTH_FREQUENCIES[i] +=
@@ -316,18 +316,21 @@ static void drawFrequency(void) {
     f = SMOOTH_FREQUENCIES[i];
 
     const bool reversed_rainbow = true;
-    const Color color =
-        next_rainbow_color(i, numFrequencyBuckets, reversed_rainbow);
+    Color color = next_rainbow_color(i, numFrequencyBuckets, reversed_rainbow);
 
     STATE->maxAmplitude = max(STATE->maxAmplitude, f);
-    const int h = (float)SCREEN_HEIGHT * f / STATE->maxAmplitude;
+    const float t = f / STATE->maxAmplitude;
+    const int h = (float)SCREEN_HEIGHT * t;
     const int x = w / 2 + i * w;
-    const float radius = 5.0f;
-    const float lineWidth = 3.0f;
+    const float t2 = sinf(t * M_PI / 2.0f);
+    const float aStart = 100.0f;
+    color.a = (255.0f - aStart) * t2 + aStart;
+    const float lineWidth = 2.3f * t2 + 1.0f;
+    const float radius = t2 < 0.0001 ? 0.0f : 5.5f * t2 + 1.0f;
     const float shrinkFactor = 0.9f;
     DrawLineEx((Vector2){x, SCREEN_HEIGHT},
-               (Vector2){x, SCREEN_HEIGHT - shrinkFactor * h}, lineWidth,
-               color);
+               (Vector2){x, SCREEN_HEIGHT - shrinkFactor * h + radius - 1},
+               lineWidth, color);
     DrawCircle(x, SCREEN_HEIGHT - shrinkFactor * h, radius, color);
   }
 }
