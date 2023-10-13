@@ -322,13 +322,12 @@ static void drawFrequency(void) {
     STATE->maxAmplitude = max(STATE->maxAmplitude, f);
     const int h = (float)SCREEN_HEIGHT * f / STATE->maxAmplitude;
     const int x = w / 2 + i * w;
-    const int radius = 5;
-    const int lineWidth = 3;
-    const float shrinkFactor = 0.9;
-    for (int l = 0; l < lineWidth; ++l) {
-      DrawLine(x - (l - lineWidth / 2), SCREEN_HEIGHT, x - (l - lineWidth / 2),
-               SCREEN_HEIGHT - shrinkFactor * h, color);
-    }
+    const float radius = 5.0f;
+    const float lineWidth = 3.0f;
+    const float shrinkFactor = 0.9f;
+    DrawLineEx((Vector2){x, SCREEN_HEIGHT},
+               (Vector2){x, SCREEN_HEIGHT - shrinkFactor * h}, lineWidth,
+               color);
     DrawCircle(x, SCREEN_HEIGHT - shrinkFactor * h, radius, color);
   }
 }
