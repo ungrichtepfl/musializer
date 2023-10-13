@@ -43,6 +43,7 @@ static unsigned int FRAME_BUFFER_SIZE = 0;
 static pthread_mutex_t BUFFER_LOCK;
 
 #define SMOOTHED_AMPLITUDES_SIZE SCREEN_WIDTH
+#define SHADOW_SIZE SCREEN_WIDTH
 
 #define FFT_SIZE (2 * FRAME_BUFFER_CAPACITY)
 
@@ -262,6 +263,7 @@ static inline int nextFrequencyIndex(int k) {
 }
 
 static float SMOOTHED_AMPLITUDES[SMOOTHED_AMPLITUDES_SIZE] = {0};
+static float SHADOWS[SMOOTHED_AMPLITUDES_SIZE] = {0};
 
 static void drawFrequency(void) {
 
@@ -300,8 +302,10 @@ static void drawFrequency(void) {
       f = logf(f / n);
 
     const float smoothFactor = 10.0f;
+    const float shadowFactor = 0.8f;
     SMOOTHED_AMPLITUDES[i] +=
         (f - SMOOTHED_AMPLITUDES[i]) * smoothFactor * GetFrameTime();
+    SHADOWS[i] += (f - SHADOWS[i]) * shadowFactor * GetFrameTime();
 
     if (SMOOTHED_AMPLITUDES[i] < 0.0f)
       SMOOTHED_AMPLITUDES[i] = 0.0f;
@@ -311,6 +315,10 @@ static void drawFrequency(void) {
 
   const int w =
       numFrequencyBuckets > 0 ? SCREEN_WIDTH / numFrequencyBuckets : 1;
+
+  assert(numFrequencyBuckets <= SMOOTHED_AMPLITUDES_SIZE &&
+         numFrequencyBuckets <= SHADOW_SIZE &&
+         "You need to increase the SMOOTHED_AMPLITUDES_SIZE and SHADOW_SIZE");
 
   for (int i = 0; i < numFrequencyBuckets; ++i) {
     const float f = SMOOTHED_AMPLITUDES[i];
@@ -334,6 +342,23 @@ static void drawFrequency(void) {
                (Vector2){x, SCREEN_HEIGHT - shrinkFactor * h + radius - 1},
                lineWidth, color);
     DrawCircle(x, SCREEN_HEIGHT - shrinkFactor * h, radius, color);
+
+    const float fShadow = SHADOWS[i];
+
+    const float tShadow = fShadow / STATE->maxAmplitude;
+    const int hShadow = (float)SCREEN_HEIGHT * tShadow;
+    const float lineWidthShadow =
+        (4.0f - smallestLineWidth) * tShadow + smallestLineWidth;
+    const float radiusShadow =
+        t < 0.0001 ? 0.0f
+                   : (7.0f - lineWidthShadow) * tShadow + lineWidthShadow;
+    Color colorShadow = Fade(color, 0.7 * tShadow);
+    DrawLineEx(
+        (Vector2){x, SCREEN_HEIGHT},
+        (Vector2){x, SCREEN_HEIGHT - shrinkFactor * hShadow + radiusShadow - 1},
+        lineWidth, colorShadow);
+    // DrawCircle(x, SCREEN_HEIGHT - shrinkFactor * hShadow, radiusShadow,
+    //            colorShadow);
   }
 }
 
