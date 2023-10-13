@@ -340,11 +340,13 @@ static void drawWave(void) {
   if (!lockBuffer())
     return;
 
-  for (long i = FRAME_BUFFER_SIZE, j = 0; i >= 0 && j < SCREEN_WIDTH;
-       --i, ++j) {
+  const long dx = 2;
+  int previous_h = -1;
+  for (long i = FRAME_BUFFER_SIZE - 1, j = 0, x = SCREEN_WIDTH - dx;
+       i >= 0 && j < SMOOTHED_BUFFER_SIZE && x >= 0; i -= dx, ++j, x -= dx) {
 
     float sleft = FRAME_BUFFER[i].left;
-    const float smoothFactor = 1.5f;
+    const float smoothFactor = 1.2f;
     SMOOTH_FREQUENCIES[j] +=
         (sleft - SMOOTH_FREQUENCIES[j]) * smoothFactor * GetFrameTime();
 
@@ -354,15 +356,18 @@ static void drawWave(void) {
     sleft /= STATE->maxAmplitude;
 
     const bool reversed_rainbow = false;
-    const Color color = next_rainbow_color(j, SCREEN_WIDTH, reversed_rainbow);
-    const int lineWidth = 10;
+    const Color color = next_rainbow_color(x, SCREEN_WIDTH, reversed_rainbow);
+    const float lineWidth = 2.7f;
     const float shrinkFactor = 0.5f;
-    for (int l = 0; l < lineWidth; ++l) {
-      const int diff = sleft * SCREEN_HEIGHT / 2;
-      const int h = (float)SCREEN_HEIGHT / 2 - (l - (float)lineWidth / 2) +
-                    shrinkFactor * diff;
-      DrawPixel(j, h, color);
+    const int diff = sleft * SCREEN_HEIGHT / 2;
+    const int h = (float)SCREEN_HEIGHT / 2 + shrinkFactor * diff;
+    if (j == 0) {
+      previous_h = h;
+      continue;
     }
+    DrawLineEx((Vector2){x + dx, previous_h}, (Vector2){x, h}, lineWidth,
+               color);
+    previous_h = h;
   }
 
   unlockBuffer();
