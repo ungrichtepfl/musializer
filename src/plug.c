@@ -595,10 +595,9 @@ void update(void) {
 
   STATE->windowPosition = GetWindowPosition();
 
-  if (IsKeyPressed(KEY_R)) {
+  if (IsKeyPressed(KEY_L)) {
     // Reload plugins
     STATE->reload = true;
-    return;
   }
 
   if (IsKeyPressed(KEY_W)) {

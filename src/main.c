@@ -10,6 +10,8 @@
 
 #include "plug.h"
 
+#ifdef DYLIB
+
 #define LIBPLUG_FILE_NAME "build/libplug.so"
 #define LIBPLUG_OBJECT_FILE_NAME "build/plug.o"
 PLUG *plugin = NULL;
@@ -146,8 +148,15 @@ bool dynlibModified(bool *modified, int *fd, int *wd, struct pollfd *pfd) {
   return true;
 }
 
+#else
+
+const PLUG *plugin = &exports;
+
+#endif // DYLIB
+
 int main(void) {
 
+#ifdef DYLIB
   int fd = -1;
   int wd = -1;
   struct pollfd pfd = {0};
@@ -158,10 +167,15 @@ int main(void) {
   if (!loadPlugin()) {
     return 1;
   }
+#endif // DYLIB
+
   plugin->init();
 
   while (!plugin->finished()) {
+
+#ifdef DYLIB
     bool dynlib_modified = false;
+
     if (!dynlibModified(&dynlib_modified, &fd, &wd, &pfd)) {
       return 1;
     }
@@ -172,11 +186,15 @@ int main(void) {
       if (!hotReload())
         return 1;
     }
+#endif // DYLIB
 
     plugin->update();
   }
   plugin->terminate();
+
+#ifdef DYLIB
   close(fd);
+#endif // DYLIB
 
   return 0;
 }
