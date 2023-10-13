@@ -94,6 +94,7 @@ static void loadMusicFiles() {
   }
   UnloadDroppedFiles(droppedFiles);
 }
+
 typedef struct LinearColor_s {
   float r;
   float g;
@@ -193,12 +194,12 @@ static Color next_rainbow_color(int i, int n, bool reversed) {
     start = 3 * buckets;
     stop = 4 * buckets;
     startColor = GREEN;
-    stopColor = BLUE;
+    stopColor = DARKBLUE;
   } else {
     start = 4 * buckets;
     stop = n;
-    startColor = BLUE;
-    stopColor = PURPLE;
+    startColor = DARKBLUE;
+    stopColor = DARKPURPLE;
   }
 
   const float t = (float)(i - start) / (stop - start);
@@ -259,6 +260,7 @@ static inline float hannWindow(float sample, unsigned int n, unsigned int N) {
   // Hann window: https://en.wikipedia.org/wiki/Window_function
   return 0.5 * (1 - cosf(2.0f * M_PI * n / N)) * sample;
 }
+
 static inline int nextFrequencyIndex(int k) {
   return (int)ceilf((float)k * EQUAL_TEMPERED_FACTOR);
 }
@@ -438,6 +440,7 @@ static bool initInternal(void) {
     printf("\n mutex init failed\n");
     return false;
   }
+  SetConfigFlags(FLAG_MSAA_4X_HINT); // Enable anti-aliasing
   InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "musializer");
   InitAudioDevice();
 
