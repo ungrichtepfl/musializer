@@ -263,7 +263,7 @@ static inline int nextFrequencyIndex(int k) {
 }
 
 static float SMOOTHED_AMPLITUDES[SMOOTHED_AMPLITUDES_SIZE] = {0};
-static float SHADOWS[SMOOTHED_AMPLITUDES_SIZE] = {0};
+static float SHADOWS[SHADOW_SIZE] = {0};
 
 static void drawFrequency(void) {
 
@@ -302,13 +302,16 @@ static void drawFrequency(void) {
       f = logf(f / n);
 
     const float smoothFactor = 10.0f;
-    const float shadowFactor = 0.8f;
+    const float shadowFactor = 0.7f;
     SMOOTHED_AMPLITUDES[i] +=
         (f - SMOOTHED_AMPLITUDES[i]) * smoothFactor * GetFrameTime();
     SHADOWS[i] += (f - SHADOWS[i]) * shadowFactor * GetFrameTime();
 
     if (SMOOTHED_AMPLITUDES[i] < 0.0f)
       SMOOTHED_AMPLITUDES[i] = 0.0f;
+
+    if (SHADOWS[i] - SMOOTHED_AMPLITUDES[i] < 0.0f)
+      SHADOWS[i] = SMOOTHED_AMPLITUDES[i];
 
     STATE->maxAmplitude = max(STATE->maxAmplitude, SMOOTHED_AMPLITUDES[i]);
   }
@@ -329,15 +332,21 @@ static void drawFrequency(void) {
     const float t = f / STATE->maxAmplitude;
     const int h = (float)SCREEN_HEIGHT * t;
     const int x = w / 2 + i * w;
-    const float smallestLineWidth = 2.5f;
-    const float lineWidth = (4.0f - smallestLineWidth) * t + smallestLineWidth;
-    const float radius = t < 0.0001 ? 0.0f : (7.0f - lineWidth) * t + lineWidth;
 
-    const float smallestAlpha = 0.1f;
+    const float minLineWidth = 1.0f;
+    const float maxLineWidth = 5.0f;
+    const float lineWidth = (maxLineWidth - minLineWidth) * t + minLineWidth;
+    const float maxRadius = maxLineWidth;
+    const float minRadius = lineWidth;
+    const float radius =
+        t < 0.0001 ? 0.0f : (maxRadius - minRadius) * t + minRadius;
+
+    const float minAlpha = 0.1f;
     const float t2 = sinf(t * M_PI / 2.0f);
-    color = Fade(color, (1.0f - smallestAlpha) * t2 + smallestAlpha);
+    color = Fade(color, (1.0f - minAlpha) * t2 + minAlpha);
 
     const float shrinkFactor = 0.9f;
+
     DrawLineEx((Vector2){x, SCREEN_HEIGHT},
                (Vector2){x, SCREEN_HEIGHT - shrinkFactor * h + radius - 1},
                lineWidth, color);
@@ -348,17 +357,19 @@ static void drawFrequency(void) {
     const float tShadow = fShadow / STATE->maxAmplitude;
     const int hShadow = (float)SCREEN_HEIGHT * tShadow;
     const float lineWidthShadow =
-        (4.0f - smallestLineWidth) * tShadow + smallestLineWidth;
+        (maxLineWidth - minLineWidth) * tShadow + minLineWidth;
     const float radiusShadow =
         t < 0.0001 ? 0.0f
-                   : (7.0f - lineWidthShadow) * tShadow + lineWidthShadow;
-    Color colorShadow = Fade(color, 0.7 * tShadow);
+                   : (maxRadius - lineWidthShadow) * tShadow + lineWidthShadow;
+    const float maxShadowAlpha = 0.6f;
+    Color colorShadow =
+        Fade(color, (maxShadowAlpha - minAlpha) * tShadow + minAlpha);
     DrawLineEx(
         (Vector2){x, SCREEN_HEIGHT},
         (Vector2){x, SCREEN_HEIGHT - shrinkFactor * hShadow + radiusShadow - 1},
         lineWidth, colorShadow);
-    // DrawCircle(x, SCREEN_HEIGHT - shrinkFactor * hShadow, radiusShadow,
-    //            colorShadow);
+    DrawCircle(x, SCREEN_HEIGHT - shrinkFactor * hShadow, radiusShadow,
+               colorShadow);
   }
 }
 
@@ -516,8 +527,11 @@ static void startMusic(void) {
     AttachAudioStreamProcessor(MUSIC.stream, fillSampleBuffer);
   }
   // Reset filter
-  for (int i = 0; i < SMOOTHED_AMPLITUDES_SIZE; ++i) {
-    SMOOTHED_AMPLITUDES[i] = 0.0f;
+  for (int i = 0; i < max(SMOOTHED_AMPLITUDES_SIZE, SHADOW_SIZE); ++i) {
+    if (i < SMOOTHED_AMPLITUDES_SIZE)
+      SMOOTHED_AMPLITUDES[i] = 0.0f;
+    if (i < SHADOW_SIZE)
+      SHADOWS[i] = 0.0f;
   }
 }
 
@@ -586,8 +600,11 @@ void update(void) {
   if (IsKeyPressed(KEY_W)) {
     STATE->useWave = !STATE->useWave;
     // Reset filter
-    for (int i = 0; i < SMOOTHED_AMPLITUDES_SIZE; ++i) {
-      SMOOTHED_AMPLITUDES[i] = 0.0f;
+    for (int i = 0; i < max(SMOOTHED_AMPLITUDES_SIZE, SHADOW_SIZE); ++i) {
+      if (i < SMOOTHED_AMPLITUDES_SIZE)
+        SMOOTHED_AMPLITUDES[i] = 0.0f;
+      if (i < SHADOW_SIZE)
+        SHADOWS[i] = 0.0f;
     }
     STATE->maxAmplitude = DEFAULT_MAX_AMPLITUDE;
   }
@@ -615,8 +632,11 @@ void update(void) {
         PauseMusicStream(MUSIC);
       } else {
         // Reset filter
-        for (int i = 0; i < SMOOTHED_AMPLITUDES_SIZE; ++i) {
-          SMOOTHED_AMPLITUDES[i] = 0.0f;
+        for (int i = 0; i < max(SMOOTHED_AMPLITUDES_SIZE, SHADOW_SIZE); ++i) {
+          if (i < SMOOTHED_AMPLITUDES_SIZE)
+            SMOOTHED_AMPLITUDES[i] = 0.0f;
+          if (i < SHADOW_SIZE)
+            SHADOWS[i] = 0.0f;
         }
         STATE->maxAmplitude = DEFAULT_MAX_AMPLITUDE;
         ResumeMusicStream(MUSIC);
