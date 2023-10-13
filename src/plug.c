@@ -333,17 +333,21 @@ static void drawFrequency(void) {
     const int h = (float)SCREEN_HEIGHT * t;
     const int x = w / 2 + i * w;
 
+    const float tLine = t * t;
+
     const float minLineWidth = 1.0f;
     const float maxLineWidth = 5.0f;
-    const float lineWidth = (maxLineWidth - minLineWidth) * t + minLineWidth;
+    const float lineWidth =
+        (maxLineWidth - minLineWidth) * tLine + minLineWidth;
     const float maxRadius = maxLineWidth;
     const float minRadius = lineWidth;
     const float radius =
-        t < 0.0001 ? 0.0f : (maxRadius - minRadius) * t + minRadius;
+        t < 0.0001 ? 0.0f : (maxRadius - minRadius) * tLine + minRadius;
 
-    const float minAlpha = 0.1f;
-    const float t2 = sinf(t * M_PI / 2.0f);
-    color = Fade(color, (1.0f - minAlpha) * t2 + minAlpha);
+    const float minAlpha = 0.2f;
+    const float maxAlpha = 0.85f;
+    const float tColor = sinf(t * M_PI / 2.0f);
+    color = Fade(color, (maxAlpha - minAlpha) * tColor + minAlpha);
 
     const float shrinkFactor = 0.9f;
 
@@ -358,18 +362,18 @@ static void drawFrequency(void) {
     const int hShadow = (float)SCREEN_HEIGHT * tShadow;
     const float lineWidthShadow =
         (maxLineWidth - minLineWidth) * tShadow + minLineWidth;
-    const float radiusShadow =
-        t < 0.0001 ? 0.0f
-                   : (maxRadius - lineWidthShadow) * tShadow + lineWidthShadow;
-    const float maxShadowAlpha = 0.6f;
+    const float radiusShadow = lineWidthShadow / 2.0f;
+
+    const float maxShadowAlpha = 0.5f;
     Color colorShadow =
         Fade(color, (maxShadowAlpha - minAlpha) * tShadow + minAlpha);
-    DrawLineEx(
-        (Vector2){x, SCREEN_HEIGHT},
-        (Vector2){x, SCREEN_HEIGHT - shrinkFactor * hShadow + radiusShadow - 1},
-        lineWidth, colorShadow);
-    DrawCircle(x, SCREEN_HEIGHT - shrinkFactor * hShadow, radiusShadow,
+
+    DrawLineEx((Vector2){x, SCREEN_HEIGHT},
+               (Vector2){x, SCREEN_HEIGHT - shrinkFactor * hShadow}, lineWidth,
                colorShadow);
+
+    DrawCircleSector((Vector2){x, SCREEN_HEIGHT - shrinkFactor * hShadow},
+                     radiusShadow, 180, 360, 0, colorShadow);
   }
 }
 
@@ -622,6 +626,14 @@ void update(void) {
     // Restart music playing (stop and play)
     if (IsKeyPressed(KEY_SPACE)) {
       StopMusicStream(MUSIC);
+      // Reset filter
+      for (int i = 0; i < max(SMOOTHED_AMPLITUDES_SIZE, SHADOW_SIZE); ++i) {
+        if (i < SMOOTHED_AMPLITUDES_SIZE)
+          SMOOTHED_AMPLITUDES[i] = 0.0f;
+        if (i < SHADOW_SIZE)
+          SHADOWS[i] = 0.0f;
+      }
+      STATE->maxAmplitude = DEFAULT_MAX_AMPLITUDE;
       PlayMusicStream(MUSIC);
     }
 
