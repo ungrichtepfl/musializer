@@ -5,20 +5,22 @@ set -xe
 mkdir -p ./build
 
 # Check if the flag static is set
-if [ "$1" = "--static" ] || [ "$1" = "-s" ]; then
-    CFLAGS="-Wall -Wextra -Wpedantic -Ofast $(pkg-config --cflags raylib)"
-    LFLAGS="$(pkg-config  --libs raylib) -lpthread -lm"
-    CPPFLAGS=""
-    SRC="./src/main.c ./build/plug.o ./src/fft.c"
-else
+if [ "$1" = "--dynamic" ] || [ "$1" = "-d" ]; then
     CFLAGS="-Wall -Wextra -Wpedantic -Ofast"
     LFLAGS="-ldl"
     CPPFLAGS="-DDYLIB"
+    RAYLIB=""
     SRC="./src/main.c"
+else
+    CFLAGS="-Wall -Wextra -Wpedantic -Ofast"
+    LFLAGS="-lm -lpthread"
+    CPPFLAGS=""
+    RAYLIB="$(pkg-config --libs --cflags raylib)"
+    SRC="./src/main.c ./src/plug.c ./src/fft.c"
 fi
 
 # shellcheck disable=SC2086
-cc -o ./build/musializer $SRC $CPPFLAGS $CFLAGS $LFLAGS
+cc -o ./build/musializer $SRC $CPPFLAGS $CFLAGS $RAYLIB $LFLAGS
 
 # Tests
 CFLAGS_TEST="-Wall -Wextra -Wpedantic -Ofast"

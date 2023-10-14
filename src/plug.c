@@ -345,7 +345,7 @@ static void drawFrequency(void) {
         t < 0.0001 ? 0.0f : (maxRadius - minRadius) * tLine + minRadius;
 
     const float minAlpha = 0.2f;
-    const float maxAlpha = 0.85f;
+    const float maxAlpha = 1.0f;
     const float tColor = sinf(t * M_PI / 2.0f);
     color = Fade(color, (maxAlpha - minAlpha) * tColor + minAlpha);
 
@@ -364,7 +364,7 @@ static void drawFrequency(void) {
         (maxLineWidth - minLineWidth) * tShadow + minLineWidth;
     const float radiusShadow = lineWidthShadow / 2.0f;
 
-    const float maxShadowAlpha = 0.5f;
+    const float maxShadowAlpha = 0.65f;
     Color colorShadow =
         Fade(color, (maxShadowAlpha - minAlpha) * tShadow + minAlpha);
 
@@ -595,7 +595,7 @@ void update(void) {
 
   STATE->windowPosition = GetWindowPosition();
 
-  if (IsKeyPressed(KEY_L)) {
+  if (IsKeyPressed(KEY_R)) {
     // Reload plugins
     STATE->reload = true;
   }

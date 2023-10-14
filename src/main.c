@@ -1,3 +1,8 @@
+
+#include "plug.h"
+
+#ifdef DYLIB
+
 #include <dlfcn.h>
 #include <errno.h>
 #include <poll.h>
@@ -7,10 +12,6 @@
 #include <string.h>
 #include <sys/inotify.h>
 #include <unistd.h>
-
-#include "plug.h"
-
-#ifdef DYLIB
 
 #define LIBPLUG_FILE_NAME "build/libplug.so"
 #define LIBPLUG_OBJECT_FILE_NAME "build/plug.o"
