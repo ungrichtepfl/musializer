@@ -13,6 +13,7 @@
 #define SCREEN_HEIGHT 450
 
 #define FPS 60
+#define FADE_OUT_TIME 2.0
 
 // https://pages.mtu.edu/~suits/NoteFreqCalcs.html
 #define EQUAL_TEMPERED_FACTOR 1.059463094359
@@ -264,6 +265,16 @@ static inline int nextFrequencyIndex(int k) {
 
 static float SMOOTHED_AMPLITUDES[SMOOTHED_AMPLITUDES_SIZE] = {0};
 static float SHADOWS[SHADOW_SIZE] = {0};
+
+static void resetFilter(void) {
+  for (int i = 0; i < max(SMOOTHED_AMPLITUDES_SIZE, SHADOW_SIZE); ++i) {
+    if (i < SMOOTHED_AMPLITUDES_SIZE)
+      SMOOTHED_AMPLITUDES[i] = 0.0f;
+    if (i < SHADOW_SIZE)
+      SHADOWS[i] = 0.0f;
+  }
+  STATE->maxAmplitude = DEFAULT_MAX_AMPLITUDE;
+}
 
 static void drawFrequency(void) {
 
@@ -528,13 +539,7 @@ static void startMusic(void) {
     PlayMusicStream(MUSIC);
     SeekMusicStream(MUSIC, STATE->timePlayedSeconds);
     AttachAudioStreamProcessor(MUSIC.stream, fillSampleBuffer);
-  }
-  // Reset filter
-  for (int i = 0; i < max(SMOOTHED_AMPLITUDES_SIZE, SHADOW_SIZE); ++i) {
-    if (i < SMOOTHED_AMPLITUDES_SIZE)
-      SMOOTHED_AMPLITUDES[i] = 0.0f;
-    if (i < SHADOW_SIZE)
-      SHADOWS[i] = 0.0f;
+    resetFilter();
   }
 }
 
@@ -558,7 +563,9 @@ bool finished(void) { return STATE->finished; }
 static void stopMusic(void) {
   if (IsMusicReady(MUSIC)) {
     DetachAudioStreamProcessor(MUSIC.stream, fillSampleBuffer);
+    StopMusicStream(MUSIC);
     UnloadMusicStream(MUSIC);
+    MUSIC = (Music){0};
   }
 }
 
@@ -580,11 +587,21 @@ void pausePlugin(void) { terminateInternal(); }
 
 bool reload() { return STATE->reload; }
 
+static double TIC = 0.0;
+
 void update(void) {
+  static bool showHelpInfo = false;
+  static bool showHelp = false;
 
   // Main game loop
   if (WindowShouldClose()) // Detect window close button or ESC key
   {
+    STATE->finished = true;
+    return;
+  }
+
+  if (IsKeyPressed(KEY_Q)) {
+    // Quit
     STATE->finished = true;
     return;
   }
@@ -601,14 +618,7 @@ void update(void) {
 
   if (IsKeyPressed(KEY_W)) {
     STATE->useWave = !STATE->useWave;
-    // Reset filter
-    for (int i = 0; i < max(SMOOTHED_AMPLITUDES_SIZE, SHADOW_SIZE); ++i) {
-      if (i < SMOOTHED_AMPLITUDES_SIZE)
-        SMOOTHED_AMPLITUDES[i] = 0.0f;
-      if (i < SHADOW_SIZE)
-        SHADOWS[i] = 0.0f;
-    }
-    STATE->maxAmplitude = DEFAULT_MAX_AMPLITUDE;
+    resetFilter();
   }
 
   if (IsFileDropped()) {
@@ -624,14 +634,7 @@ void update(void) {
     // Restart music playing (stop and play)
     if (IsKeyPressed(KEY_SPACE)) {
       StopMusicStream(MUSIC);
-      // Reset filter
-      for (int i = 0; i < max(SMOOTHED_AMPLITUDES_SIZE, SHADOW_SIZE); ++i) {
-        if (i < SMOOTHED_AMPLITUDES_SIZE)
-          SMOOTHED_AMPLITUDES[i] = 0.0f;
-        if (i < SHADOW_SIZE)
-          SHADOWS[i] = 0.0f;
-      }
-      STATE->maxAmplitude = DEFAULT_MAX_AMPLITUDE;
+      resetFilter();
       PlayMusicStream(MUSIC);
     }
 
@@ -641,16 +644,19 @@ void update(void) {
       if (IsMusicStreamPlaying(MUSIC)) {
         PauseMusicStream(MUSIC);
       } else {
-        // Reset filter
-        for (int i = 0; i < max(SMOOTHED_AMPLITUDES_SIZE, SHADOW_SIZE); ++i) {
-          if (i < SMOOTHED_AMPLITUDES_SIZE)
-            SMOOTHED_AMPLITUDES[i] = 0.0f;
-          if (i < SHADOW_SIZE)
-            SHADOWS[i] = 0.0f;
-        }
-        STATE->maxAmplitude = DEFAULT_MAX_AMPLITUDE;
+        resetFilter();
         ResumeMusicStream(MUSIC);
       }
+    }
+
+    if (IsKeyPressed(KEY_LEFT)) {
+      SeekMusicStream(MUSIC, GetMusicTimePlayed(MUSIC) - 5.0f);
+      resetFilter();
+    }
+
+    if (IsKeyPressed(KEY_RIGHT)) {
+      SeekMusicStream(MUSIC, GetMusicTimePlayed(MUSIC) + 5.0f);
+      resetFilter();
     }
 
     STATE->timePlayedSeconds = GetMusicTimePlayed(MUSIC);
@@ -661,6 +667,11 @@ void update(void) {
         STATE->musicFiles.currentlyPlayed = 0;
       stopMusic();
       startMusic();
+    }
+
+    if (IsKeyPressed(KEY_S)) {
+      stopMusic();
+      unloadMusicFiles();
     }
   }
 
@@ -673,9 +684,41 @@ void update(void) {
   ClearBackground(BLACK);
 
   if (IsMusicReady(MUSIC)) {
+
     drawMusic();
+
+    if (showHelpInfo) {
+      TIC = GetTime();
+      showHelpInfo = false;
+    }
+    const double toc = GetTime();
+    Color color = WHITE;
+    if (toc - TIC < FADE_OUT_TIME) {
+      color = Fade(color, 1.0f - (toc - TIC) / FADE_OUT_TIME);
+      DrawText("TOGGLE 'H' FOR HELP", 290, 30, 20, color);
+    }
+
+    if (IsKeyPressed(KEY_H)) {
+      showHelp = !showHelp;
+    }
+
+    if (showHelp) {
+      DrawText("HIDE HELP:        'H'", 689, 20, 10, WHITE);
+      DrawText("TOGGLE BETWEEN WAVE AND FREQUENCY:        'W'", 523, 40, 10,
+               WHITE);
+      DrawText("STOP PLAYING:        'S'", 669, 60, 10, WHITE);
+      DrawText("PAUSE/RESUME PLAYING:        'P'", 612, 80, 10, WHITE);
+      DrawText("RESTART PLAYING: 'SPACE'", 647, 100, 10, WHITE);
+      DrawText("SEEK BACKWARDS:       '<-' ", 652, 120, 10, WHITE);
+      DrawText("SEEK FORWARDS:       '->'", 659, 140, 10, WHITE);
+      DrawText("QUIT:        'Q'", 719, 160, 10, WHITE);
+    }
+
   } else {
-    DrawText("DRAG AND DROP A MUSIC FILE", 235, 200, 20, WHITE);
+    DrawText("DRAG AND DROP A MUSIC FILES", 230, 200, 20, WHITE);
+    DrawText("OR PRESS 'Q' TO QUIT", 280, 225, 20, WHITE);
+    showHelpInfo = true;
+    showHelp = false;
   }
 
   EndDrawing();
