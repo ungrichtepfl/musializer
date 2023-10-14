@@ -371,9 +371,8 @@ static void drawFrequency(void) {
     DrawLineEx((Vector2){x, SCREEN_HEIGHT},
                (Vector2){x, SCREEN_HEIGHT - shrinkFactor * hShadow}, lineWidth,
                colorShadow);
-
     DrawCircleSector((Vector2){x, SCREEN_HEIGHT - shrinkFactor * hShadow},
-                     radiusShadow, 180, 360, 0, colorShadow);
+                     radiusShadow, 90, 270, 0, colorShadow);
   }
 }
 

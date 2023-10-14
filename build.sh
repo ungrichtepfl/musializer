@@ -4,7 +4,8 @@ set -xe
 
 mkdir -p ./build
 
-# Check if the flag static is set
+RAYLIB_VERSION="4.2.0" # Corresponds to raylib 4.5
+
 if [ "$1" = "--dynamic" ] || [ "$1" = "-d" ]; then
     CFLAGS="-Wall -Wextra -Wpedantic -Ofast"
     LFLAGS="-ldl"
@@ -15,7 +16,7 @@ else
     CFLAGS="-Wall -Wextra -Wpedantic -Ofast"
     LFLAGS="-lm -lpthread"
     CPPFLAGS=""
-    RAYLIB="$(pkg-config --libs --cflags raylib)"
+    RAYLIB="$(pkg-config --libs --cflags "raylib = $RAYLIB_VERSION")"
     SRC="./src/main.c ./src/plug.c ./src/fft.c"
 fi
 
