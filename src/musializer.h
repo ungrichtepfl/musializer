@@ -1,5 +1,5 @@
-#ifndef PLUG_H
-#define PLUG_H
+#ifndef MUSIALIZER_H
+#define MUSIALIZER_H
 
 #include <stdbool.h>
 
@@ -8,7 +8,6 @@ typedef struct State State;
 // from:
 // https://stackoverflow.com/questions/36384195/how-to-correctly-assign-a-pointer-returned-by-dlsym-into-a-variable-of-function
 typedef struct {
-  // void update(void);
   bool (*init)(void);
   void (*update)(void);
   State *(*getState)(void);
@@ -19,9 +18,9 @@ typedef struct {
   void (*terminate)(void);
 } exports_t;
 
-typedef exports_t PLUG;
-#define PLUG_SYM "exports"
-// In plug.c:
+typedef exports_t MUSIALIZER;
+#define MUSIALIZER_SYM "exports"
+// In musializer.c:
 extern const exports_t exports;
 
-#endif // PLUG_H
+#endif // MUSIALIZER_H

@@ -4,15 +4,15 @@ set -xe
 
 mkdir -p ./build
 
+CFLAGS="-Wall -Werror -Wextra -Wpedantic -Ofast -ggdb"
+
 if [ "$1" = "--dynamic" ] || [ "$1" = "-d" ]; then
-    ./build_plug.sh
-    CFLAGS="-Wall -Wextra -Wpedantic -Ofast"
+    ./hot-reload.sh
     LFLAGS="-ldl"
     CPPFLAGS="-DDYLIB"
-    RAYLIB="" # No raylib needed, will be handled by build_plug.sh
+    RAYLIB="" # No raylib needed, will be handled by hot-reload.sh
     SRC="./src/main.c"
 else
-    CFLAGS="-Wall -Wextra -Wpedantic -Ofast"
     LFLAGS="-lm -lpthread"
     CPPFLAGS=""
     if [ "$(uname -m)" = "x86_64" ]; then
@@ -21,7 +21,7 @@ else
         echo "You are not on a x86_64 machine, please install raylib 5.0.0 and make sure that pkg-config can find it."
         RAYLIB="$(pkg-config --libs --cflags "raylib")"
     fi
-    SRC="./src/main.c ./src/plug.c ./src/fft.c"
+    SRC="./src/main.c ./src/musializer.c ./src/fft.c"
 fi
 
 

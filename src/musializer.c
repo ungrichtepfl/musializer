@@ -1,4 +1,4 @@
-#include "plug.h"
+#include "musializer.h"
 #include "fft.h"
 #include <assert.h>
 #include <errno.h>

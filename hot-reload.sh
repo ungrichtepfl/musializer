@@ -4,7 +4,6 @@ set -xe
 
 mkdir -p ./build
 
-
 if [ "$(uname -m)" = "x86_64" ]; then
     RAYLIB_CFLAGS="-I ./raylib-5.0_linux_amd64/include/"
     RAYLIB_LFLAGS="-L./raylib-5.0_linux_amd64/lib -l:libraylib.so -Wl,-rpath=./raylib-5.0_linux_amd64/lib"
@@ -14,11 +13,11 @@ else
     RAYLIB_CFLAGS="$(pkg-config --flags "raylib")"
 fi
 
-CFLAGS="-Wall -Wextra -Wpedantic -Ofast $RAYLIB_CFLAGS"
+CFLAGS="-Wall -Werror -Wextra -Wpedantic -Ofast -ggdb $RAYLIB_CFLAGS"
 LFLAGS="-lpthread -lm $RAYLIB_LFLAGS"
 
 # shellcheck disable=SC2086
-cc -c -o ./build/plug.o ./src/plug.c $CFLAGS -fPIC
+cc -c -o ./build/musializer.o ./src/musializer.c $CFLAGS -fPIC
 
 # shellcheck disable=SC2086
-cc -o ./build/libplug.so ./build/plug.o ./src/fft.c $CFLAGS $LFLAGS -shared
+cc -o ./build/libmusializer.so ./build/musializer.o ./src/fft.c $CFLAGS $LFLAGS -shared

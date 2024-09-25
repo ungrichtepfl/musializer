@@ -1,5 +1,5 @@
 
-#include "plug.h"
+#include "musializer.h"
 
 #ifdef DYLIB
 
@@ -13,32 +13,33 @@
 #include <sys/inotify.h>
 #include <unistd.h>
 
-#define LIBPLUG_FILE_NAME "build/libplug.so"
-#define LIBPLUG_OBJECT_FILE_NAME "build/plug.o"
-PLUG *plugin = NULL;
-void *libplug = NULL;
+#define LIB_MUSIALIZER_FILE_NAME "build/libmusializer.so"
+#define LIB_MUSIALIZER_OBJECT_FILE_NAME "build/musializer.o"
+MUSIALIZER *musializer = NULL;
+void *lib_musializer = NULL;
 
-bool unloadPlugin(void) {
-  if (dlclose(libplug) != 0) {
-    fprintf(stderr, "Could not unload plugin: %s\n", dlerror());
+bool unloadMusializer(void) {
+  if (dlclose(lib_musializer) != 0) {
+    fprintf(stderr, "Could not unload musializer: %s\n", dlerror());
     return false;
   }
   return true;
 }
 
-bool loadPlugin(void) {
+bool loadMusializer(void) {
 
-  libplug = dlopen(LIBPLUG_FILE_NAME, RTLD_NOW);
+  lib_musializer = dlopen(LIB_MUSIALIZER_FILE_NAME, RTLD_NOW);
 
-  if (libplug == NULL) {
-    fprintf(stderr, "Could not load %s: %s\n", LIBPLUG_FILE_NAME, dlerror());
+  if (lib_musializer == NULL) {
+    fprintf(stderr, "Could not load %s: %s\n", LIB_MUSIALIZER_FILE_NAME,
+            dlerror());
     return false;
   }
-  plugin = dlsym(libplug, PLUG_SYM);
+  musializer = dlsym(lib_musializer, MUSIALIZER_SYM);
 
-  if (plugin == NULL) {
-    fprintf(stderr, "Could not load %s from %s: %s\n", PLUG_SYM,
-            LIBPLUG_FILE_NAME, dlerror());
+  if (musializer == NULL) {
+    fprintf(stderr, "Could not load %s from %s: %s\n", MUSIALIZER_SYM,
+            LIB_MUSIALIZER_FILE_NAME, dlerror());
     return false;
   }
 
@@ -46,14 +47,14 @@ bool loadPlugin(void) {
 }
 
 bool hotReload(void) {
-  State *state = plugin->getState();
-  plugin->pause();
-  if (!unloadPlugin())
+  State *state = musializer->getState();
+  musializer->pause();
+  if (!unloadMusializer())
     return false;
-  if (!loadPlugin())
+  if (!loadMusializer())
     return false;
-  if (!plugin->resume(state)) {
-    fprintf(stderr, "Could not resume plugin\n");
+  if (!musializer->resume(state)) {
+    fprintf(stderr, "Could not resume musializer\n");
     return false;
   }
   return true;
@@ -65,10 +66,10 @@ bool init_watches(int *fd_, int *wd_, struct pollfd *pfd_) {
     fprintf(stderr, "Could not initialize inotify: %s\n", strerror(errno));
     return false;
   }
-  const int wd =
-      inotify_add_watch(fd, LIBPLUG_OBJECT_FILE_NAME, IN_MODIFY | IN_IGNORED);
+  const int wd = inotify_add_watch(fd, LIB_MUSIALIZER_OBJECT_FILE_NAME,
+                                   IN_MODIFY | IN_IGNORED);
   if (wd == -1) {
-    fprintf(stderr, "Cannot watch '%s': %s\n", LIBPLUG_OBJECT_FILE_NAME,
+    fprintf(stderr, "Cannot watch '%s': %s\n", LIB_MUSIALIZER_OBJECT_FILE_NAME,
             strerror(errno));
     return false;
   }
@@ -151,7 +152,7 @@ bool dynlibModified(bool *modified, int *fd, int *wd, struct pollfd *pfd) {
 
 #else
 
-const PLUG *plugin = &exports;
+const MUSIALIZER *musializer = &exports;
 
 #endif // DYLIB
 
@@ -165,14 +166,14 @@ int main(void) {
     return 1;
   }
 
-  if (!loadPlugin()) {
+  if (!loadMusializer()) {
     return 1;
   }
 #endif // DYLIB
 
-  plugin->init();
+  musializer->init();
 
-  while (!plugin->finished()) {
+  while (!musializer->finished()) {
 
 #ifdef DYLIB
     bool dynlib_modified = false;
@@ -180,18 +181,18 @@ int main(void) {
     if (!dynlibModified(&dynlib_modified, &fd, &wd, &pfd)) {
       return 1;
     }
-    const bool plug_modified = plugin->reload() | dynlib_modified;
+    const bool musializer_modified = musializer->reload() | dynlib_modified;
 
-    if (plug_modified) {
-      printf("Plugin file was modified!\n");
+    if (musializer_modified) {
+      printf("Musializer file was modified!\n");
       if (!hotReload())
         return 1;
     }
 #endif // DYLIB
 
-    plugin->update();
+    musializer->update();
   }
-  plugin->terminate();
+  musializer->terminate();
 
 #ifdef DYLIB
   close(fd);
