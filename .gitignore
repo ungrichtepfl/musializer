@@ -1,3 +1,5 @@
 *.mp3
 *.wav
 build/
+musializer.js
+musializer.wasm

@@ -512,7 +512,13 @@ bool init(void) {
   STATE->reload = false;
   STATE->timePlayedSeconds = 0.0f;
   STATE->maxAmplitude = DEFAULT_MAX_AMPLITUDE;
+
+#if defined(__EMSCRIPTEN__) || defined(__wasm__) || defined(__wasm32__) ||     \
+    defined(__wasm64__)
+  STATE->windowPosition = (Vector2){0, 0};
+#else
   STATE->windowPosition = GetWindowPosition();
+#endif
   STATE->useWave = false;
   STATE->musicFiles = (MusicFiles){0, 0, NULL};
 
@@ -552,7 +558,11 @@ bool resume(State *state) {
 
   STATE->reload = false;
   startMusic();
+
+#if !(defined(__EMSCRIPTEN__) || defined(__wasm__) || defined(__wasm32__) ||   \
+      defined(__wasm64__))
   SetWindowPosition(STATE->windowPosition.x, STATE->windowPosition.y);
+#endif
   return true;
 }
 
@@ -608,8 +618,12 @@ void update(void) {
 
   // Update
   //----------------------------------------------------------------------------------
-
+#if defined(__EMSCRIPTEN__) || defined(__wasm__) || defined(__wasm32__) ||     \
+    defined(__wasm64__)
+  STATE->windowPosition = (Vector2){0, 0};
+#else
   STATE->windowPosition = GetWindowPosition();
+#endif
 
   if (IsKeyPressed(KEY_R)) {
     // Reload plugins
