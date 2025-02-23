@@ -342,6 +342,9 @@ jwE50AGjLCVuS8Yt4H7OgZLKK5EKOsLviEWJSL/+0uMi7gLUSBseYwqEbXvSHCec1CJvZPyHCmYQffaB
   </script>
 
   <!-- REF: https://developers.google.com/web/updates/2018/11/web-audio-autoplay -->
+
+  <script src=musializer.js>
+  </script>
   <script type='text/javascript'>
     var audioBtn = document.querySelector('#btn-audio');
 
@@ -370,8 +373,7 @@ jwE50AGjLCVuS8Yt4H7OgZLKK5EKOsLviEWJSL/+0uMi7gLUSBseYwqEbXvSHCec1CJvZPyHCmYQffaB
       if (resumed) audioBtn.value = "🔇 MUTE";
       else audioBtn.value = "🔈 RESUME";
     }
-  </script>
-  <script src=musializer.js>
+    createMusializer(Module);
   </script>
 </body>
 
