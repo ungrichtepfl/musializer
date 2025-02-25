@@ -9,6 +9,13 @@
 #include <stdlib.h>
 #include <string.h>
 
+#if defined(__EMSCRIPTEN__) || defined(__wasm__) || defined(__wasm32__) ||     \
+    defined(__wasm64__)
+#define FOR_WASM 1
+#else
+#define FOR_WASM 0
+#endif
+
 #define SCREEN_WIDTH 800
 #define SCREEN_HEIGHT 450
 
@@ -513,8 +520,7 @@ bool init(void) {
   STATE->timePlayedSeconds = 0.0f;
   STATE->maxAmplitude = DEFAULT_MAX_AMPLITUDE;
 
-#if defined(__EMSCRIPTEN__) || defined(__wasm__) || defined(__wasm32__) ||     \
-    defined(__wasm64__)
+#if FOR_WASM
   STATE->windowPosition = (Vector2){0, 0};
 #else
   STATE->windowPosition = GetWindowPosition();
@@ -559,8 +565,7 @@ bool resume(State *state) {
   STATE->reload = false;
   startMusic();
 
-#if !(defined(__EMSCRIPTEN__) || defined(__wasm__) || defined(__wasm32__) ||   \
-      defined(__wasm64__))
+#if !FOR_WASM
   SetWindowPosition(STATE->windowPosition.x, STATE->windowPosition.y);
 #endif
   return true;
@@ -618,8 +623,7 @@ void update(void) {
 
   // Update
   //----------------------------------------------------------------------------------
-#if defined(__EMSCRIPTEN__) || defined(__wasm__) || defined(__wasm32__) ||     \
-    defined(__wasm64__)
+#if FOR_WASM
   STATE->windowPosition = (Vector2){0, 0};
 #else
   STATE->windowPosition = GetWindowPosition();
@@ -725,12 +729,20 @@ void update(void) {
       DrawText("RESTART PLAYING: 'SPACE'", 647, 100, 10, WHITE);
       DrawText("SEEK BACKWARDS:       '<-' ", 652, 120, 10, WHITE);
       DrawText("SEEK FORWARDS:       '->'", 659, 140, 10, WHITE);
+#if !FOR_WASM
       DrawText("QUIT:        'Q'", 719, 160, 10, WHITE);
+#endif
     }
 
   } else {
-    DrawText("DRAG AND DROP A MUSIC FILES", 230, 200, 20, WHITE);
-    DrawText("OR PRESS 'Q' TO QUIT", 280, 225, 20, WHITE);
+#if FOR_WASM
+    DrawText("DRAG AND DROP MUSIC FILES", 230, 200, 20, WHITE);
+    DrawText("(FOR EXAMPLE AN MP3 FILE)", 235, 225, 20, WHITE);
+#else
+    DrawText("DRAG AND DROP MUSIC FILES", 230, 175, 20, WHITE);
+    DrawText("(FOR EXAMPLE AN MP3 FILE)", 235, 200, 20, WHITE);
+    DrawText("OR PRESS 'Q' TO QUIT", 275, 225, 20, WHITE);
+#endif
     showHelpInfo = true;
     showHelp = false;
   }
