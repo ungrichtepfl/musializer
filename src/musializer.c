@@ -615,11 +615,13 @@ void update(void) {
     return;
   }
 
+#if !FOR_WASM
   if (IsKeyPressed(KEY_Q)) {
     // Quit
     STATE->finished = true;
     return;
   }
+#endif // FOR_WASM
 
   // Update
   //----------------------------------------------------------------------------------
