@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <float.h>
 
 #if defined(__EMSCRIPTEN__) || defined(__wasm__) || defined(__wasm32__) ||     \
     defined(__wasm64__)
@@ -65,19 +66,21 @@ typedef struct MusicFiles {
   char **paths;
 } MusicFiles;
 
-static Music MUSIC;
+static Music MUSIC = {0};
 
 typedef struct State {
   bool finished;
   bool reload;
-  float timePlayedSeconds;
-  MusicFiles musicFiles;
-  Vector2 windowPosition;
-  float maxAmplitude;
   bool useWave;
+  bool showHelpInfo;
+  bool showHelp;
+  float timePlayedSeconds;
+  float maxAmplitude;
+  Vector2 windowPosition;
+  MusicFiles musicFiles;
 } State;
 
-static State *STATE;
+static State *STATE = NULL;
 
 static void unloadMusicFiles(void) {
   if (STATE->musicFiles.count > 0) {
@@ -527,6 +530,8 @@ bool init(void) {
 #endif
   STATE->useWave = false;
   STATE->musicFiles = (MusicFiles){0, 0, NULL};
+  STATE->showHelp = false;
+  STATE->showHelpInfo = false;
 
   return true;
 }
@@ -602,11 +607,9 @@ void pausePlugin(void) { terminateInternal(); }
 
 bool reload() { return STATE->reload; }
 
-static double TIC = 0.0;
+static double TIC = -DBL_MAX;
 
 void update(void) {
-  static bool showHelpInfo = false;
-  static bool showHelp = false;
 
   // Main game loop
   if (WindowShouldClose()) // Detect window close button or ESC key
@@ -707,9 +710,9 @@ void update(void) {
 
     drawMusic();
 
-    if (showHelpInfo) {
+    if (STATE->showHelpInfo) {
       TIC = GetTime();
-      showHelpInfo = false;
+      STATE->showHelpInfo = false;
     }
     const double toc = GetTime();
     Color color = WHITE;
@@ -719,10 +722,10 @@ void update(void) {
     }
 
     if (IsKeyPressed(KEY_H)) {
-      showHelp = !showHelp;
+      STATE->showHelp = !STATE->showHelp;
     }
 
-    if (showHelp) {
+    if (STATE->showHelp) {
       DrawText("HIDE HELP:        'H'", 689, 20, 10, WHITE);
       DrawText("TOGGLE BETWEEN WAVE AND FREQUENCY:        'W'", 523, 40, 10,
                WHITE);
@@ -745,8 +748,8 @@ void update(void) {
     DrawText("(FOR EXAMPLE AN MP3 FILE)", 235, 200, 20, WHITE);
     DrawText("OR PRESS 'Q' TO QUIT", 275, 225, 20, WHITE);
 #endif
-    showHelpInfo = true;
-    showHelp = false;
+    STATE->showHelpInfo = true;
+    STATE->showHelp = false;
   }
 
   EndDrawing();
