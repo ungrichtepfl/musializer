@@ -343,9 +343,8 @@ jwE50AGjLCVuS8Yt4H7OgZLKK5EKOsLviEWJSL/+0uMi7gLUSBseYwqEbXvSHCec1CJvZPyHCmYQffaB
 
   <!-- REF: https://developers.google.com/web/updates/2018/11/web-audio-autoplay -->
 
-  <script src=musializer.js>
-  </script>
-  <script type='text/javascript'>
+  <script type='module'>
+    import createMusializer from "./musializer.js";
     var audioBtn = document.querySelector('#btn-audio');
 
     // An array of all contexts to resume on the page
