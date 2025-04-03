@@ -83,7 +83,7 @@ bool init_watches(int *fd_, int *wd_, struct pollfd *pfd_) {
 bool dynlibModified(bool *modified, int *fd, int *wd, struct pollfd *pfd) {
 
   const int poll_num = poll(pfd, 1, 1); // block for 1ms
-  bool modified_internal = false;
+  *modified = false;
 
   if (poll_num == -1) {
     if (errno != EINTR) {
@@ -121,31 +121,25 @@ bool dynlibModified(bool *modified, int *fd, int *wd, struct pollfd *pfd) {
           printf("Iterating event mask %u\n", event->mask);
 
           if (event->mask & IN_IGNORED) {
-            printf("Ignored\n");
-            modified_internal = true;
+            printf("File has been deleted. Reinit watches.\n");
             if (close(*fd) == -1) {
               fprintf(stderr, "close\n");
               return false;
             }
+            usleep(200000); // Wait until file has been written
             if (!init_watches(fd, wd, pfd)) {
               return false;
             }
-          }
-          if (event->mask & IN_MODIFY) {
+            *modified = true;
+          } else if (event->mask & IN_MODIFY) {
             if (*wd == event->wd) {
               printf("File modified\n");
-              modified_internal = true;
+              *modified = true;
             }
           }
         }
       }
     }
-  }
-  if (modified_internal) {
-    *modified = true;
-    usleep(200000); // Wait until file has been written
-  } else {
-    *modified = false;
   }
   return true;
 }
