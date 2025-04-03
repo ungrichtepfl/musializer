@@ -173,6 +173,13 @@ static Color lerpColorGammaCorrected(const Color color1, const Color color2,
   return linear_to_srgb(c);
 }
 
+#define RAINBOW_RED (Color){ 255, 0, 0, 255 } 
+#define RAINBOW_ORANGE (Color){ 255, 127, 0, 255 } 
+#define RAINBOW_YELLOW (Color){ 255, 255, 0, 255 } 
+#define RAINBOW_GREEN (Color){ 0, 255, 0, 255 } 
+#define RAINBOW_BLUE (Color){ 0, 0, 255, 255 } 
+#define RAINBOW_PURPLE (Color){ 255, 0, 255, 255 } 
+
 static Color nextRainbowColor(int i, int n, bool reversed) {
 
   if (reversed)
@@ -186,28 +193,28 @@ static Color nextRainbowColor(int i, int n, bool reversed) {
   if (i < buckets) {
     start = 0;
     stop = buckets;
-    startColor = RED;
-    stopColor = ORANGE;
+    startColor = RAINBOW_RED;
+    stopColor = RAINBOW_ORANGE;
   } else if (i < 2 * buckets) {
     start = buckets;
     stop = 2 * buckets;
-    startColor = ORANGE;
-    stopColor = YELLOW;
+    startColor = RAINBOW_ORANGE;
+    stopColor = RAINBOW_YELLOW;
   } else if (i < 3 * buckets) {
     start = 2 * buckets;
     stop = 3 * buckets;
-    startColor = YELLOW;
-    stopColor = GREEN;
+    startColor = RAINBOW_YELLOW;
+    stopColor = RAINBOW_GREEN;
   } else if (i < 4 * buckets) {
     start = 3 * buckets;
     stop = 4 * buckets;
-    startColor = GREEN;
-    stopColor = DARKBLUE;
+    startColor = RAINBOW_GREEN;
+    stopColor = RAINBOW_BLUE;
   } else {
     start = 4 * buckets;
     stop = n;
-    startColor = DARKBLUE;
-    stopColor = DARKPURPLE;
+    startColor = RAINBOW_BLUE;
+    stopColor = RAINBOW_PURPLE;
   }
 
   const float t = (float)(i - start) / (stop - start);
@@ -356,8 +363,8 @@ static void drawFrequency(void) {
 
     const float tLine = t * t;
 
-    const float minLineWidth = 1.0f;
-    const float maxLineWidth = 5.0f;
+    const float minLineWidth = 3.0f;
+    const float maxLineWidth = 5.5f;
     const float lineWidth =
         (maxLineWidth - minLineWidth) * tLine + minLineWidth;
     const float maxRadius = maxLineWidth;
@@ -365,7 +372,7 @@ static void drawFrequency(void) {
     const float radius =
         t < 0.0001 ? 0.0f : (maxRadius - minRadius) * tLine + minRadius;
 
-    const float minAlpha = 0.2f;
+    const float minAlpha = 0.4f;
     const float maxAlpha = 1.0f;
     const float tColor = sinf(t * M_PI / 2.0f);
     color = Fade(color, (maxAlpha - minAlpha) * tColor + minAlpha);
@@ -381,9 +388,6 @@ static void drawFrequency(void) {
 
     const float tShadow = fShadow / STATE->maxAmplitude;
     const int hShadow = (float)SCREEN_HEIGHT * tShadow;
-    const float lineWidthShadow =
-        (maxLineWidth - minLineWidth) * tShadow + minLineWidth;
-    const float radiusShadow = lineWidthShadow / 2.0f;
 
     const float maxShadowAlpha = 0.65f;
     Color colorShadow =
@@ -392,8 +396,6 @@ static void drawFrequency(void) {
     DrawLineEx((Vector2){x, SCREEN_HEIGHT},
                (Vector2){x, SCREEN_HEIGHT - shrinkFactor * hShadow}, lineWidth,
                colorShadow);
-    DrawCircleSector((Vector2){x, SCREEN_HEIGHT - shrinkFactor * hShadow},
-                     radiusShadow, 90, 270, 0, colorShadow);
   }
 }
 
